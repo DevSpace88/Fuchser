@@ -1,0 +1,161 @@
+name: fuchser
+# ============================================================================
+# docker-compose.yml — PRODUKTIONS-Deploy auf Coolify
+# ============================================================================
+# Änderungen gegenüber der Dev-Variante:
+#   * frontend: statt node-Dev-Server jetzt der Multi-Stage-Produktions-Build
+#     (Vite bauen -> nginx ausliefern). Fixes "npm /app/package.json ENOENT".
+#   * backend:  KEIN Host-Volume-Mount mehr. Der Code kommt per `COPY . .`
+#     ins Image (backend/Dockerfile), dadurch bleibt alembic.ini erhalten.
+#     Fixes "No 'script_location' key found".
+#   * db:       Healthcheck ohne ${...}-Interpolation (robuster im Compose-
+#     Parsing), Volume-Name explizit.
+#
+# Coolify mappt die Domains über docker_compose_domains (backend/frontend)
+# und routet per Reverse-Proxy. Die internen Ports müssen deshalb nur per
+# `expose` sichtbar sein + der Service über den Service-Namen erreichbar.
+# ============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # 1) DATENBANK (PostgreSQL) — als Teil des Compose-Stacks
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:17-alpine
+    container_name: fuchser-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-app_db}
+    # Kein Port nach außen nötig — nur intern erreichbar.
+    expose:
+      - "5432"
+    volumes:
+      - fuchser_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # PostgreSQL-interner User "postgres" existiert immer, daher ist
+      # ein pg_isready ohne auf die App-DB zu zeigen hier am robustesten.
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app_user} -d ${POSTGRES_DB:-app_db}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # REDIS — Queue + PubSub für Background-Tasks (reload-sichere Agenten)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: fuchser-redis
+    volumes:
+      - fuchser_redisdata:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # 2) BACKEND (FastAPI) — eigener Build, kein Volume-Overlay
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fuchser-backend
+    environment:
+      - ENVIRONMENT=prod
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      - POSTGRES_USER=${POSTGRES_USER:-app_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me}
+      - POSTGRES_DB=${POSTGRES_DB:-app_db}
+      # Der DB-Dienst heißt im Compose-Netzwerk "db".
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://fuchser.sergejgorochow.de}
+      - SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-}
+      - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD:-}
+      # --- Agent (Deep Research) ---
+      - LLM_PROVIDER=${LLM_PROVIDER:-deepseek}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
+      - GLM_API_KEY=${GLM_API_KEY:-}
+      - GLM_MODEL=${GLM_MODEL:-glm-5.3}
+      - GLM_BASE_URL=${GLM_BASE_URL:-https://api.z.ai/api/coding/paas/v4}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - REDIS_URL=redis://redis:6379/0
+    expose:
+      - "8000"
+    # Nach dem Start Migrationen fahren, dann uvicorn OHNE --reload (Prod).
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # WORKER — führt LangGraph-Graphen unabhängig vom API aus
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fuchser-worker
+    environment:
+      - ENVIRONMENT=prod
+      - SECRET_KEY=${SECRET_KEY}
+      - POSTGRES_USER=${POSTGRES_USER:-app_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me}
+      - POSTGRES_DB=${POSTGRES_DB:-app_db}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - LLM_PROVIDER=${LLM_PROVIDER:-deepseek}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
+      - GLM_API_KEY=${GLM_API_KEY:-}
+      - GLM_MODEL=${GLM_MODEL:-glm-5.3}
+      - GLM_BASE_URL=${GLM_BASE_URL:-https://api.z.ai/api/coding/paas/v4}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - REDIS_URL=redis://redis:6379/0
+    command: python -m app.worker
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # 3) FRONTEND (Vite-Produktions-Build -> nginx)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fuchser-frontend
+    # VITE_API_URL wird zur Build-Zeit gesetzt. In Produktion liefern wir
+    # über denselben Domain-Host aus; relative /api-Pfade daher leer lassen.
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-}
+    expose:
+      - "80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  fuchser_pgdata:
+  fuchser_redisdata:

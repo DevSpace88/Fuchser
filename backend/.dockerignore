@@ -1,0 +1,24 @@
+# Was NICHT in den Docker-Build-Context soll (spart Zeit + Bandbreite).
+# WICHTIG: uv.lock und pyproject.toml müssen DRIN bleiben, sonst schlägt
+# `uv sync --frozen` fehl!
+
+# Virtuelle Umgebung (lokal erzeugt) — würde hunderte MB in den Context schieben.
+.venv/
+
+# Cache-Verzeichnisse
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Env (Secrets niemals ins Image!)
+.env
+.env.*
+
+# Git
+.git/
+.gitignore

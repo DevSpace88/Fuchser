@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  ============================================================================
+  THEME — "Neon Bloom" (User-Wunsch, übersetzt aus Tailwind-v4-shadcn-Theme)
+  ============================================================================
+  Original lag im v4-Format vor (@theme inline, rgb()-Werte). Dieses Projekt
+  läuft auf Tailwind v3 — deshalb: Farben als RGB-KANÄLE ("219 39 119") in
+  CSS-Variablen, tailwind.config.js mappt sie mit rgb(var(--x) / <alpha-value>)
+  (das <alpha-value>-Stück erlaubt opacity-Utilities wie bg-primary/50).
+
+  Dark Mode: Klasse .dark auf <html> (darkMode: ["class"] in der config).
+  ============================================================================
+*/
+@layer base {
+  :root {
+    --background: 253 242 248;
+    --foreground: 46 16 101;
+    --card: 255 255 255;
+    --card-foreground: 46 16 101;
+    --popover: 255 255 255;
+    --popover-foreground: 46 16 101;
+    --primary: 219 39 119;
+    --primary-foreground: 255 255 255;
+    --secondary: 124 58 237;
+    --secondary-foreground: 255 255 255;
+    --muted: 243 232 255;
+    --muted-foreground: 107 33 168;
+    --accent: 6 182 212;
+    --accent-foreground: 255 255 255;
+    --destructive: 239 68 68;
+    --destructive-foreground: 255 255 255;
+    --border: 233 213 255;
+    --input: 233 213 255;
+    --ring: 219 39 119;
+    --chart-1: 219 39 119;
+    --chart-2: 124 58 237;
+    --chart-3: 6 182 212;
+    --chart-4: 245 158 11;
+    --chart-5: 236 72 153;
+    --sidebar: 255 255 255;
+    --sidebar-foreground: 46 16 101;
+    --sidebar-primary: 219 39 119;
+    --sidebar-primary-foreground: 255 255 255;
+    --sidebar-accent: 243 232 255;
+    --sidebar-accent-foreground: 219 39 119;
+    --sidebar-border: 233 213 255;
+    --sidebar-ring: 219 39 119;
+    --font-sans: Basic, ui-sans-serif, sans-serif, system-ui;
+    --font-serif: Georgia, serif;
+    --font-mono: "Fira Code", monospace;
+    --radius: 0.75rem;
+    --tracking-normal: 0.025em;
+
+    /* Schatten-Set aus dem v4-Theme (Pink-Glow, mit Opazitäts-Stufen) */
+    --shadow-2xs: 0px 4px 10px 0px rgb(219 39 119 / 0.05);
+    --shadow-sm: 0px 4px 10px 0px rgb(219 39 119 / 0.1), 0px 1px 2px -1px rgb(219 39 119 / 0.1);
+    --shadow-md: 0px 4px 10px 0px rgb(219 39 119 / 0.1), 0px 2px 4px -1px rgb(219 39 119 / 0.1);
+    --shadow-lg: 0px 4px 10px 0px rgb(219 39 119 / 0.1), 0px 4px 6px -1px rgb(219 39 119 / 0.1);
+    --shadow-xl: 0px 4px 10px 0px rgb(219 39 119 / 0.1), 0px 8px 10px -1px rgb(219 39 119 / 0.1);
+    --shadow-2xl: 0px 4px 10px 0px rgb(219 39 119 / 0.25);
+  }
+
+  .dark {
+    --background: 13 2 33;
+    --foreground: 253 242 248;
+    --card: 26 11 46;
+    --card-foreground: 253 242 248;
+    --popover: 26 11 46;
+    --popover-foreground: 253 242 248;
+    --primary: 255 0 255;
+    --primary-foreground: 255 255 255;
+    --secondary: 112 0 255;
+    --secondary-foreground: 255 255 255;
+    --muted: 45 10 78;
+    --muted-foreground: 192 132 252;
+    --accent: 0 255 255;
+    --accent-foreground: 13 2 33;
+    --destructive: 255 46 99;
+    --destructive-foreground: 255 255 255;
+    --border: 76 29 149;
+    --input: 76 29 149;
+    --ring: 255 0 255;
+    --chart-1: 255 0 255;
+    --chart-2: 112 0 255;
+    --chart-3: 0 255 255;
+    --chart-4: 251 191 36;
+    --chart-5: 244 114 182;
+    --sidebar: 17 4 39;
+    --sidebar-foreground: 253 242 248;
+    --sidebar-primary: 255 0 255;
+    --sidebar-primary-foreground: 255 255 255;
+    --sidebar-accent: 45 10 78;
+    --sidebar-accent-foreground: 255 0 255;
+    --sidebar-border: 76 29 149;
+    --sidebar-ring: 255 0 255;
+    --font-mono: "JetBrains Mono", monospace;
+    --radius: 0.5rem;
+
+    /* Neon-Glow-Schatten (Magenta) aus dem v4-Theme */
+    --shadow-2xs: 0px 0px 15px 1px rgb(255 0 255 / 0.25);
+    --shadow-sm: 0px 0px 15px 1px rgb(255 0 255 / 0.5), 0px 1px 2px 0px rgb(255 0 255 / 0.5);
+    --shadow-md: 0px 0px 15px 1px rgb(255 0 255 / 0.5), 0px 2px 4px 0px rgb(255 0 255 / 0.5);
+    --shadow-lg: 0px 0px 15px 1px rgb(255 0 255 / 0.5), 0px 4px 6px 0px rgb(255 0 255 / 0.5);
+    --shadow-xl: 0px 0px 15px 1px rgb(255 0 255 / 0.5), 0px 8px 10px 0px rgb(255 0 255 / 0.5);
+    --shadow-2xl: 0px 0px 15px 1px rgb(255 0 255 / 1.25);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    letter-spacing: var(--tracking-normal);
+  }
+}
+
+/* ==========================================================================
+   Report-Typografie (Stufe 4, User-Feedback):
+   Markdown-Reports brauchen echte Absätze & Hierarchie statt eines
+   zusammengequetschten Textblocks — react-markdown rendert rohe <h1>/<p>,
+   ohne Typography-Plugin stylen wir sie hier von Hand.
+   overflow-wrap: anywhere verhindert, dass lange URLs/Token aus dem
+   Block "ausbrechen".
+   ========================================================================== */
+.report-md {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.report-md h1 {
+  @apply mt-6 mb-3 text-xl font-bold;
+}
+.report-md h2 {
+  @apply mt-6 mb-2 text-lg font-semibold;
+}
+.report-md h3 {
+  @apply mt-4 mb-2 text-base font-semibold;
+}
+.report-md p {
+  @apply my-3 leading-relaxed;
+}
+.report-md ul {
+  @apply my-3 list-disc space-y-1 pl-6;
+}
+.report-md ol {
+  @apply my-3 list-decimal space-y-1 pl-6;
+}
+.report-md a {
+  @apply text-primary underline underline-offset-2;
+}
+.report-md blockquote {
+  @apply my-3 border-l-4 border-muted pl-4 italic text-muted-foreground;
+}
+.report-md code {
+  @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.85em];
+}
+.report-md table {
+  @apply my-3 w-full border-collapse text-sm;
+}
+.report-md th,
+.report-md td {
+  @apply border border-border px-2 py-1 text-left;
+}
+
+/* Landingpage: sanftes Einblenden der Quellen-Chips im Demo-Ticker */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -1,0 +1,105 @@
+# ============================================================================
+# pyproject.toml — Zentrale Projektkonfiguration für das Backend
+# ============================================================================
+# In Python gibt es früher setup.py/setup.cfg, neuer ist EINE Datei für alles:
+# hier definieren wir Metadaten, Dependencies, Tool-Einstellungen.
+# Als Paketmanager verwenden wir `uv` (modern, sehr schnell).
+
+[project]
+name = "fuchser-backend"
+version = "0.1.0"
+description = "Ausführlich kommentiertes FastAPI-Starter-Kit (Auth, DB, Migrations)."
+requires-python = ">=3.12"
+readme = "../README.md"
+
+# ----------------------------------------------------------------------------
+# Produktions-Dependencies
+# ----------------------------------------------------------------------------
+# FastAPI selbst + Uvicorn (ASGI-Server, der FastAPI ausführt).
+dependencies = [
+    # FastAPI + Server + Cli ("standard" zieht uvicorn, httptools etc.).
+    "fastapi[standard]>=0.118",
+    # Pydantic[email]: damit EmailStr funktioniert (zieht email-validator).
+    "pydantic[email]>=2.9",
+    # SQLModel: vereint SQLAlchemy (ORM) + Pydantic (Validierung) in EINEM Model.
+    # Empfehlung der FastAPI-Skill: SQLModel statt rohem SQLAlchemy verwenden.
+    "sqlmodel>=0.0.22",
+    # Async-Treiber für PostgreSQL (für die App selbst, async-Engine).
+    "asyncpg>=0.30",
+    # Sync-Treiber für PostgreSQL (für Alembic — siehe backend/alembic/env.py).
+    # Alembic läuft synchron, asyncpg geht dort nicht. psycopg3 ist der
+    # moderne Standard für sync-Zugriff (Nachfolger von psycopg2).
+    "psycopg[binary]>=3.2",
+    # Alembic: Migrations-Tool für Schema-Änderungen (ähnlich wie Laravel-Migrationen).
+    "alembic>=1.13",
+    # Pydantic-Settings: lädt Konfiguration aus .env in typisierte Python-Objekte.
+    "pydantic-settings>=2.5",
+    # JWT-Bibliothek. Wir nutzen sie LOW-LEVEL (encode/decode selbst),
+    # statt eine High-Level-Lib wie fastapi-jwt-auth (unmaintained).
+    "pyjwt>=2.9",
+    # Password-Hashing (Argon2/Bcrypt). Moderner Ersatz für passlib (unmaintained).
+    "pwdlib[argon2,bcrypt]>=0.2.1",
+    # Python-dotenv, damit pydantic-settings die .env direkt liest.
+    "python-dotenv>=1.0",
+    "langgraph>=1.2.11",
+    "langchain-deepseek>=1.1.0",
+    "langchain-tavily>=0.2.18",
+    "langgraph-checkpoint-postgres>=3.1.2",
+    "ddgs>=9.16.0",
+    "xhtml2pdf>=0.2.17",
+    "markdown>=3.10.3",
+    "pypdf>=6.16.2",
+    "python-docx>=1.2.0",
+    "redis[hiredis]>=8.1.0",
+]
+
+# ----------------------------------------------------------------------------
+# Dev-Dependencies (nur für Entwicklung/Tests, nicht in Produktion)
+# ----------------------------------------------------------------------------
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",          # async Test-Unterstützung
+    "httpx>=0.27",                   # Async-HTTP-Client fürs Backend-Testen
+    "anyio>=4.4",                    # für httpx + async test
+    "ruff>=0.7",                     # Linter + Formatter (empfohlen von FastAPI-Skill)
+    # Für Tests mit echter Postgres-DB auf localhost: Wir nutzen in Tests eine
+    # SQLite-In-Memory-DB (siehe tests/conftest.py), daher kein weiterer Treiber nötig.
+    "aiosqlite>=0.22.1",
+    "greenlet>=3.5.4",
+]
+
+# ----------------------------------------------------------------------------
+# FastAPI-Einstellungen: Wo liegt die App?
+# ----------------------------------------------------------------------------
+# Erlaubt `fastapi dev` / `fastapi run` ohne expliziten Dateipfad.
+[tool.fastapi]
+entrypoint = "app.main:app"
+
+# ----------------------------------------------------------------------------
+# Ruff — Linting & Formatting
+# ----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Auswahl an Regelsets:
+#   E/W  = pycodestyle (PEP8)
+#   F    = pyflakes (ungenutzte Imports etc.)
+#   I    = isort (Import-Reihenfolge)
+#   B    = bugbear (häufige Bug-Patterns)
+#   FAST = FastAPI-spezifische Regeln (sicherer Code)
+#   UP   = pyupgrade (modernere Python-Syntax)
+select = ["E", "W", "F", "I", "B", "FAST", "UP"]
+ignore = [
+    "B008",  # Depends(...) als Default-Argument ist in FastAPI idiomatisch.
+]
+
+# ----------------------------------------------------------------------------
+# Pytest
+# ----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"               # async-Tests laufen automatisch als Koroutinen
+testpaths = ["tests"]
+pythonpath = ["."]                  # damit `import app...` in den Tests klappt

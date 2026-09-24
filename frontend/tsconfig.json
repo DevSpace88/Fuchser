@@ -1,0 +1,11 @@
+{
+  // tsconfig.json — TypeScript-Konfiguration für die SPA.
+  // Wir nutzen "project references": diese Datei referenziert die beiden
+  // Unterkonfigurationen tsconfig.app.json (App-Code) und tsconfig.node.json
+  // (Vite-Konfiguration, die auf Node läuft).
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}
