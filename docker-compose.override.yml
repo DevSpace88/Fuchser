@@ -1,0 +1,57 @@
+# ============================================================================
+# docker-compose.override.yml — LOCAL DEMO / DEVELOPMENT OVERRIDES
+# ============================================================================
+# `docker compose up` merges this file automatically on top of
+# docker-compose.yml (which by itself is the production stack for Coolify
+# with internal-only ports). With these overrides the whole stack runs
+# locally and is reachable from the browser:
+#
+#   cp .env.example .env        # set SECRET_KEY (+ DEEPSEEK_API_KEY or GLM_*)
+#   docker compose up --build
+#
+#   App (frontend):   http://localhost:8080   (nginx also proxies /api)
+#   API docs (Swagger): http://localhost:8000/docs
+#
+# The Coolify deployment does NOT use this file: Coolify generates its own
+# compose file from docker-compose.yml. But if you ever deploy by running a
+# plain `docker compose up` on a server, skip this file explicitly:
+#   docker compose -f docker-compose.yml up -d
+# (or delete/rename this file, e.g. docker-compose.local.yml + `-f`).
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # FRONTEND — publish nginx on the host so the browser can reach the app.
+  # nginx reverse-proxies /api to the backend internally, so everything works
+  # from http://localhost:8080 (same origin — no CORS involved). SSE streaming
+  # works through the proxy too (proxy_buffering is off in the nginx config).
+  # ---------------------------------------------------------------------------
+  frontend:
+    ports:
+      - "8080:80"
+
+  # ---------------------------------------------------------------------------
+  # BACKEND — published for the Swagger/ReDoc UI. Also switched to dev mode,
+  # because the production stack sets ENVIRONMENT=prod, which disables /docs.
+  # ---------------------------------------------------------------------------
+  backend:
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=dev
+      # Local origins (same-origin requests via nginx don't need CORS, but
+      # this covers hybrid setups like a Vite dev server on :5173 against
+      # the dockerized backend).
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:8080,http://localhost:3000
+
+  # ---------------------------------------------------------------------------
+  # OPTIONAL — uncomment to reach the database / Redis from the host
+  # (e.g. with psql or a GUI client). Not needed for the demo.
+  # ---------------------------------------------------------------------------
+  # db:
+  #   ports:
+  #     - "5432:5432"
+  #
+  # redis:
+  #   ports:
+  #     - "6379:6379"

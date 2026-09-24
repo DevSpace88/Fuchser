@@ -93,6 +93,7 @@ over Redis PubSub, which the endpoint forwards to the client.
 ```
 Fuchser/
 ├── docker-compose.yml        # Production stack (Coolify): db, redis, backend, worker, frontend
+├── docker-compose.override.yml  # Local overrides: published ports + dev mode (docs on)
 ├── .env.example              # Environment variable template
 │
 ├── backend/
@@ -135,7 +136,36 @@ Fuchser/
 
 ---
 
-## Quick start (local development)
+## Quick start
+
+### Option A — full stack via Docker Compose (easiest)
+
+```bash
+# 1) Environment: put a real SECRET_KEY and an LLM key in .env
+cp .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # -> SECRET_KEY
+# Research runs need an LLM key: DEEPSEEK_API_KEY
+# (or LLM_PROVIDER=glm + GLM_API_KEY)
+
+# 2) Build and start everything (db, redis, backend, worker, frontend)
+docker compose up --build
+
+# App:        http://localhost:8080   (nginx also proxies /api)
+# Swagger UI: http://localhost:8000/docs
+```
+
+Log in as admin with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from your
+`.env`. Web search works out of the box via DuckDuckGo (no key needed); set
+`TAVILY_API_KEY` for higher-quality Tavily results.
+
+> How this works: `docker-compose.yml` by itself is a **production stack**
+> with internal-only ports. The included `docker-compose.override.yml` is
+> merged automatically by `docker compose up` and publishes the local ports
+> (frontend `:8080`, backend `:8000`) plus enables the Swagger docs
+> (`ENVIRONMENT=dev`). The Coolify deployment ignores the override because
+> Coolify generates its own compose file.
+
+### Option B — local development without Docker
 
 Prerequisites: Docker (for Postgres + Redis), [uv](https://docs.astral.sh/uv/)
 (Python ≥ 3.12), Node.js/npm.
@@ -171,12 +201,6 @@ npm install
 npm run dev                                 # http://localhost:5173
 ```
 
-The first admin account is seeded automatically on startup from
-`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
-
-Web search works out of the box via DuckDuckGo (no key needed); set
-`TAVILY_API_KEY` for higher-quality Tavily results.
-
 ---
 
 ## Production deployment
@@ -196,6 +220,11 @@ All ports are internal (`expose`, no host port mappings) — Coolify's reverse
 proxy maps the domains. Swagger/ReDoc docs are disabled when `ENVIRONMENT=prod`.
 Default CORS origin is `https://fuchser.sergejgorochow.de` (override via
 `CORS_ORIGINS`). Migrations run automatically on backend start.
+
+> The local `docker-compose.override.yml` (ports + dev mode) is not part of
+> the production deploy: Coolify generates its own compose file and ignores
+> it. If you deploy somewhere else with a plain `docker compose up`, skip the
+> override explicitly: `docker compose -f docker-compose.yml up -d`.
 
 ---
 
