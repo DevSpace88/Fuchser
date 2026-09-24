@@ -4,13 +4,13 @@ Revision ID: f6k7l8m9n0o1
 Revises: e5j6k7l8m9n0
 Create Date: 2026-08-29
 
-Unterhaltungen als EIGSTÄNDIGE Entität (wie in jedem Chat-Programm):
-Eine Conversation enthält mehrere Nachrichten (research_projects).
-Die Historie listet CONVERSATIONS, nicht einzelne Fragen — Nachfragen
-verschwinden damit aus der Chat-Liste (sie sind Nachrichten im Chat).
+Conversations as a STANDALONE entity (as in any chat program):
+A conversation contains multiple messages (research_projects).
+The history lists CONVERSATIONS, not individual questions — follow-ups
+thereby disappear from the chat list (they are messages in the chat).
 
-Backfill: Bestehende parent-Ketten werden zu Conversations gruppiert
-(jede Wurzel + ihre Nachkommen = eine Unterhaltung, Titel = Wurzelfrage).
+Backfill: existing parent chains are grouped into conversations
+(each root + its descendants = one conversation, title = root question).
 """
 
 from typing import Sequence, Union
@@ -48,7 +48,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_research_projects_conversation_id", "research_projects", ["conversation_id"])
 
-    # ---- Backfill: parent-Ketten -> Conversations ----
+    # ---- Backfill: parent chains -> conversations ----
     conn = op.get_bind()
     projects = conn.execute(
         sa.text(
@@ -61,7 +61,7 @@ def upgrade() -> None:
         if parent_id and parent_id in conv_of_project:
             conv_of_project[pid] = conv_of_project[parent_id]
             continue
-        # Wurzel: neue Conversation (Titel = gekürzte Frage)
+        # Root: new conversation (title = truncated question)
         cid = uuid.uuid4()
         title = (question or "Unterhaltung")[:200]
         conn.execute(
@@ -77,7 +77,7 @@ def upgrade() -> None:
             sa.text("UPDATE research_projects SET conversation_id = :c WHERE id = :p"),
             {"c": cid, "p": pid},
         )
-    # Kinder nachziehen
+    # Pull the children along
     for pid, user_id, question, parent_id, created in projects:
         if parent_id and parent_id in conv_of_project:
             conn.execute(

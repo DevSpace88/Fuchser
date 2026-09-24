@@ -18,8 +18,8 @@ dist/
 *.egg-info/
 *.egg
 
-# uv (Python-Paketmanager, das wir verwenden)
-# uv.lock NICHT ignorieren — er speichert die exakten Versionen und gehört in git!
+# uv (the Python package manager we use)
+# Do NOT ignore uv.lock — it stores the exact versions and belongs in git!
 
 # ============================================================================
 # Tests / Coverage
@@ -35,9 +35,9 @@ coverage.xml
 .ruff_cache/
 
 # ============================================================================
-# Umgebungsvariablen / Secrets — NIEMALS committen!
-# .env.example darf committet werden (enthält nur Platzhalter),
-# aber die echte .env mit Passwörtern/Secrets darf niemals in git landen.
+# Environment variables / Secrets — NEVER commit them!
+# .env.example may be committed (it contains only placeholders),
+# but the real .env with passwords/secrets must never end up in git.
 # ============================================================================
 .env
 .env.local
@@ -56,7 +56,7 @@ frontend/.env
 .DS_Store
 
 # ============================================================================
-# Datenbank
+# Database
 # ============================================================================
 *.sqlite3
 *.db
@@ -68,7 +68,7 @@ postgres_data/
 node_modules/
 frontend/dist/
 frontend/build/
-# Vite generiert diese Datei bei jedem Build neu:
+# Vite regenerates this file on every build:
 frontend/.vite/
 
 # ============================================================================

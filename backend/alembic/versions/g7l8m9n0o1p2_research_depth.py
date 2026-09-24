@@ -4,9 +4,9 @@ Revision ID: g7l8m9n0o1p2
 Revises: f6k7l8m9n0o1
 Create Date: 2026-08-29
 
-Phase 2 "Deep Reports": Tiefe pro Frage — "quick" (bisheriges Format) oder
-"deep" (Outline -> Kapitel-Recherche -> lange Kapitel -> Assembly mit
-Literaturverzeichnis).
+Phase 2 "Deep Reports": depth per question — "quick" (the previous format)
+or "deep" (outline -> chapter research -> long chapters -> assembly with
+a bibliography).
 """
 
 from typing import Sequence, Union

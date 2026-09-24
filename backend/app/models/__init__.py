@@ -1,13 +1,13 @@
 """
-models/__init__.py — zentrale Import-Sammelstelle für alle Tabellen-Modelle.
+models/__init__.py — central import hub for all table models.
 
-WARUM das wichtig ist:
-  SQLModel.metadata (bzw. SQLAlchemy) sammelt alle @table-Modelle automatisch
-  ein, SOBALD die Klasse importiert wurde. Damit Alembic & create_all alle
-  Tabellen kennen, reicht ein `from app.models import *` von überall.
+WHY this matters:
+  SQLModel.metadata (i.e. SQLAlchemy) collects all @table models automatically
+  AS SOON AS the class has been imported. For Alembic & create_all to know all
+  tables, a single `from app.models import *` from anywhere is enough.
 
-  Ohne diesen Sammelimport müsste man an 10 Stellen einzeln importieren
-  und würde leicht eine Tabelle vergessen -> Migration fehlt sie.
+  Without this hub import you would have to import each model individually in
+  10 places and could easily forget a table -> the migration would miss it.
 """
 
 from app.models.base import TimestampMixin

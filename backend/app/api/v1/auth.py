@@ -1,30 +1,30 @@
 """
-api/v1/auth.py — Auth-Endpunkte (/api/v1/auth/*)
+api/v1/auth.py — auth endpoints (/api/v1/auth/*)
 ================================================
 
-Das ist die "Tür" unserer App: hier kann man sich registrieren, einloggen,
-Tokens erneuern und ausloggen.
+This is the "door" of our app: here you can register, log in,
+renew tokens and log out.
 
-Endpunkte:
-  POST /auth/register        -> neuen User anlegen (öffentlich)
-  POST /auth/login           -> einloggen, bekommt Token-Paar (JSON-Eingabe)
-  POST /auth/login/oauth     -> gleicher Login, aber OAuth2-konform (FORMULAR-Eingabe)
-                                -> das ist der Endpunkt, den der /docs-Authorize-Button nutzt
-  POST /auth/refresh         -> neues Token-Paar (Rotation)
-  POST /auth/logout          -> Refresh-Token widerrufen
-  GET  /auth/me              -> aktuell eingeloggten User (geschützt)
+Endpoints:
+  POST /auth/register        -> create a new user (public)
+  POST /auth/login           -> log in, receive a token pair (JSON input)
+  POST /auth/login/oauth     -> same login, but OAuth2-compliant (FORM input)
+                                -> this is the endpoint the /docs Authorize button uses
+  POST /auth/refresh         -> new token pair (rotation)
+  POST /auth/logout          -> revoke the refresh token
+  GET  /auth/me              -> currently logged-in user (protected)
 
-Konzepthinweis — warum ZWEI Login-Endpunkte?
---------------------------------------------
-FastAPI's Swagger-UI (/docs) hat einen "Authorize"-Button, der das Standard-
-OAuth2-Formular (username/password als FORM-DATA) an einen Endpunkt schickt.
-Damit der Button funktioniert, brauchen wir einen Endpunkt mit
+Concept note — why TWO login endpoints?
+---------------------------------------
+FastAPI's Swagger UI (/docs) has an "Authorize" button that sends the standard
+OAuth2 form (username/password as FORM-DATA) to an endpoint.
+For the button to work, we need an endpoint with
 OAuth2PasswordRequestForm.
 
-Für unser eigenes Frontend ist JSON bequemer (EmailStr + Password als JSON-Body),
-daher zusätzlich /auth/login (JSON).
+For our own frontend JSON is more convenient (EmailStr + password as a JSON body),
+hence the additional /auth/login (JSON).
 
-Beide rufen denselben auth_service.authenticate auf — DRY.
+Both call the same auth_service.authenticate — DRY.
 """
 
 from typing import Annotated
@@ -53,33 +53,33 @@ from app.services.auth_service import (
     logout as service_logout,
 )
 
-# Router mit Prefix + Tag. Prefix wird VOR jeden der unten deklarierten Pfade
-# gesetzt: @router.post("/login") -> /api/v1/auth/login (wenn der Eltern-Router
-# /api/v1 inkludiert — siehe api/v1/router.py).
-# Empfehlung der FastAPI-Skill: Metadaten (prefix, tags) am Router, NICHT am
-# include_router festlegen.
+# Router with prefix + tag. The prefix is put IN FRONT of every path declared
+# below: @router.post("/login") -> /api/v1/auth/login (when the parent router
+# includes /api/v1 — see api/v1/router.py).
+# FastAPI skill recommendation: define metadata (prefix, tags) on the router,
+# NOT on include_router.
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 # ----------------------------------------------------------------------------
-# /auth/register — neuen User anlegen (öffentlich)
+# /auth/register — create a new user (public)
 # ----------------------------------------------------------------------------
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def register(data: UserCreate, session: SessionDep):
     """
-    Registriert einen neuen User.
+    Registers a new user.
 
-    Eingabe (JSON): { email, password, full_name? }
-    Antwort:        die neuen User-Daten (ohne Passwort).
+    Input (JSON):  { email, password, full_name? }
+    Response:      the new user's data (without the password).
 
-    Bei belegter E-Mail: 409 Conflict.
+    If the email is taken: 409 Conflict.
     """
     try:
         user = await register_user(session, data)
     except EmailAlreadyExistsError:
-        # Konflikt: die Ressource (E-Mail) existiert schon -> 409 (nicht 400).
-        # `from None`: wir verbergen bewusst die interne Exception, weil die
-        # Detail-Message generisch ist (keine Internas nach außen reichen).
+        # Conflict: the resource (email) already exists -> 409 (not 400).
+        # `from None`: we deliberately hide the internal exception because the
+        # detail message is generic (no internals leak to the outside).
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Diese E-Mail-Adresse ist bereits registriert.",
@@ -88,15 +88,15 @@ async def register(data: UserCreate, session: SessionDep):
 
 
 # ----------------------------------------------------------------------------
-# /auth/login — Login mit JSON (für unser Frontend)
+# /auth/login — login with JSON (for our frontend)
 # ----------------------------------------------------------------------------
 @router.post("/login", response_model=TokenPair)
 async def login(data: UserLogin, session: SessionDep):
     """
-    Login mit JSON-Body { email, password }.
+    Login with a JSON body { email, password }.
 
-    Antwort bei Erfolg: { access_token, refresh_token, token_type, user }.
-    Antwort bei Misserfolg: 401.
+    Response on success: { access_token, refresh_token, token_type, user }.
+    Response on failure: 401.
     """
     try:
         user = await authenticate(session, data.email, data.password)
@@ -110,7 +110,7 @@ async def login(data: UserLogin, session: SessionDep):
 
 
 # ----------------------------------------------------------------------------
-# /auth/login/oauth — Login mit FORM-DATA (für Swagger /docs)
+# /auth/login/oauth — login with FORM-DATA (for Swagger /docs)
 # ----------------------------------------------------------------------------
 @router.post("/login/oauth", response_model=TokenPair)
 async def login_oauth(
@@ -118,16 +118,16 @@ async def login_oauth(
     session: SessionDep,
 ):
     """
-    OAuth2-konformer Login via FORM-DATA.
+    OAuth2-compliant login via FORM-DATA.
 
-    Genau genommen verlangt OAuth2 das Feld "username". Wir behandeln
-    `username` einfach als E-Mail — für den User bedeutet das: im /docs-
-    Authorize-Dialog einfach die E-Mail ins "username"-Feld eintragen.
+    Strictly speaking, OAuth2 requires the "username" field. We simply
+    treat `username` as the email — for the user this means: in the /docs
+    Authorize dialog, just enter the email in the "username" field.
 
-    Warum FORM-DATA statt JSON? Weil das die OAuth2-Spezifikation so
-    vorschreibt (RFC 6749). Der Authorize-Button im Swagger-UI schickt
-    Form-Daten — und der Button funktioniert nur mit einem Endpunkt, der
-    OAuth2PasswordRequestForm akzeptiert.
+    Why FORM-DATA instead of JSON? Because the OAuth2 specification
+    requires it (RFC 6749). The Authorize button in the Swagger UI sends
+    form data — and the button only works with an endpoint that accepts
+    OAuth2PasswordRequestForm.
     """
     try:
         user = await authenticate(session, form_data.username, form_data.password)
@@ -141,17 +141,17 @@ async def login_oauth(
 
 
 # ----------------------------------------------------------------------------
-# /auth/refresh — neues Token-Paar gegen den Refresh-Token
+# /auth/refresh — new token pair in exchange for the refresh token
 # ----------------------------------------------------------------------------
 @router.post("/refresh", response_model=TokenPair)
 async def refresh(data: RefreshIn, session: SessionDep):
     """
-    Tauscht einen Refresh-Token gegen ein NEUES Token-Paar ein (Rotation).
+    Exchanges a refresh token for a NEW token pair (rotation).
 
-    Eingabe: { refresh_token: "..." }
-    Antwort: neues { access_token, refresh_token, user }.
+    Input:    { refresh_token: "..." }
+    Response: new { access_token, refresh_token, user }.
 
-    Schlägt fehl (ungültig/abgelaufen/revoked): 401.
+    Fails (invalid/expired/revoked): 401.
     """
     try:
         return await refresh_token_pair(session, data.refresh_token)
@@ -163,32 +163,32 @@ async def refresh(data: RefreshIn, session: SessionDep):
 
 
 # ----------------------------------------------------------------------------
-# /auth/logout — Refresh-Token widerrufen
+# /auth/logout — revoke the refresh token
 # ----------------------------------------------------------------------------
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout_endpoint(request: Request, session: SessionDep):
     """
-    Macht den Refresh-Token ungültig.
+    Invalidates the refresh token.
 
-    Wir lesen das Token aus dem JSON-Body (loose). Im Frontend schicken wir
-    beim Logout einfach { refresh_token: "..." } mit.
+    We read the token from the JSON body (loosely). In the frontend we simply
+    send { refresh_token: "..." } along when logging out.
     """
     data = await request.json() if request.headers.get("content-type") == "application/json" else {}
     refresh_jwt = data.get("refresh_token")
     await service_logout(session, refresh_jwt)
-    # 204 = No Content: Erfolg, aber kein Body.
+    # 204 = No Content: success, but no body.
 
 
 # ----------------------------------------------------------------------------
-# /auth/me — wer bin ich? (geschützt)
+# /auth/me — who am I? (protected)
 # ----------------------------------------------------------------------------
 @router.get("/me", response_model=UserRead)
 async def me(current_user: CurrentUserDep):
     """
-    Gibt die Daten des aktuell eingeloggten Users zurück.
+    Returns the data of the currently logged-in user.
 
-    Das ist eine GESCHÜTZTE Route: `CurrentUserDep` (siehe core/deps.py)
-    führt automatisch die Authentifizierung durch. Schlägt diese fehl,
-    kommt der Client gar nicht bis hierher, sondern bekommt direkt 401.
+    This is a PROTECTED route: `CurrentUserDep` (see core/deps.py)
+    performs the authentication automatically. If it fails,
+    the client never even gets here but receives a 401 directly.
     """
     return current_user

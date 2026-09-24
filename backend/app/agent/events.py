@@ -1,18 +1,19 @@
 """
-agent/events.py — Custom-Stream-Events für die Live-Visualisierung (Stufe 4)
+agent/events.py — custom stream events for the live visualization (Stage 4)
 ==============================================================================
 
-LangGraph-Streams kennen mehrere Modi (messages/updates/custom). Für die
-Graph-Ansicht im Frontend brauchen wir FEINGRANULARE Telemetrie:
-" welcher Node läuft gerade? " — genau dafür ist der custom-Modus da.
+LangGraph streams come in several modes (messages/updates/custom). For the
+graph view in the frontend we need FINE-GRAINED telemetry:
+" which node is running right now? " — the custom mode exists for exactly
+that.
 
-Mechanik: Ein Node ruft get_stream_writer() und schreibt beliebige Dicts
-in den Stream — sie landen beim Konsumenten (unserem SSE-Endpunkt) als
-(mode="custom", payload)-Chunks.
+Mechanics: a node calls get_stream_writer() and writes arbitrary dicts
+into the stream — they arrive at the consumer (our SSE endpoint) as
+(mode="custom", payload) chunks.
 
-Der try/except ist wichtig: get_stream_writer() funktioniert NUR innerhalb
-eines laufenden Graph-Kontexts. Unit-Tests rufen Nodes direkt auf — ohne
-Kontext darf emit() nicht crashen (einfach verwerfen).
+The try/except matters: get_stream_writer() only works INSIDE a running
+graph context. Unit tests call nodes directly — without a context,
+emit() must not crash (just discard).
 """
 
 import logging
@@ -22,9 +23,9 @@ logger = logging.getLogger(__name__)
 
 def emit(event: str, **data) -> None:
     """
-    Schreibt ein Telemetrie-Event in den custom-Stream des Graph-Laufs.
+    Writes a telemetry event into the graph run's custom stream.
 
-    Beispiele:
+    Examples:
         emit("node", node="supervisor", status="start")
         emit("node", node="critic", status="end", verdict="gaps")
     """

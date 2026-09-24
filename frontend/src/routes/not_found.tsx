@@ -1,4 +1,4 @@
-// routes/not_found.tsx — 404-Seite für unbekannte URLs.
+// routes/not_found.tsx — 404 page for unknown URLs.
 
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Home, Compass, Search } from "lucide-react";
@@ -12,7 +12,7 @@ export function NotFoundPage() {
 
   return (
     <div className="container flex min-h-[calc(100vh-3.5rem)] flex-col items-center justify-center py-16 text-center">
-      {/* 404 Badge mit Fuchs-Icon */}
+      {/* 404 badge with fox icon */}
       <div className="relative mb-6 flex items-center justify-center">
         <div className="absolute -inset-4 rounded-full bg-primary/10 blur-xl" />
         <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl border border-border/80 bg-card shadow-lg">
@@ -32,7 +32,7 @@ export function NotFoundPage() {
         Die von dir gesuchte Seite existiert nicht, wurde verschoben oder die Fährte hat sich verlaufen.
       </p>
 
-      {/* Buttons je nach Login-Status */}
+      {/* Buttons depending on login status */}
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
         <Button
           variant="outline"

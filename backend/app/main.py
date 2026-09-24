@@ -1,13 +1,13 @@
 """
-main.py — App-Eintrittspunkt: hier entsteht die FastAPI-App
-============================================================
+main.py — App entry point: this is where the FastAPI app comes to life
+======================================================================
 
-Diese Datei macht DREI Dinge:
-  1) Lifespan-Setup: beim Start DB-Verbindung pingen + Admin-Seed laufen lassen.
-  2) CORS konfigurieren (damit das Frontend uns ansprechen darf).
-  3) Den v1-API-Router inkludieren.
+This file does THREE things:
+  1) Lifespan setup: at startup, ping the DB + run the admin seed.
+  2) Configure CORS (so the frontend is allowed to talk to us).
+  3) Include the v1 API router.
 
-Dazu kommt in Produktion das Ausliefern des gebauten Frontends via app.frontend().
+Additionally, in production it serves the built frontend via app.frontend().
 """
 
 import logging
@@ -27,23 +27,23 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# 1) LIFESPAN — läuft beim START (und beim STOP) der App
+# 1) LIFESPAN — runs at app START (and STOP)
 # ============================================================================
-# Lifespan ersetzt das alte `@app.on_event("startup")`. Vorteil: Start- UND
-# Stop-Logik in EINER Funktion, sauber mit `async with` klappbar.
+# Lifespan replaces the old `@app.on_event("startup")`. Advantage: startup AND
+# shutdown logic in ONE function, neatly collapsible with `async with`.
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
-    Wird beim Start EINMAL ausgeführt.
+    Executed ONCE at startup.
 
-    Wir machen hier KEIN `create_all` (Tabellen werden via Alembic-Migration
-    angelegt). Dafür:
-      - Pingen wir die DB, um frühe Verbindungsfehler zu bemerken.
-      - Seeden den Admin-User, falls SEED_ADMIN_* gesetzt.
+    We do NOT run `create_all` here (tables are created via Alembic
+    migrations). Instead:
+      - We ping the DB to catch connection errors early.
+      - We seed the admin user if SEED_ADMIN_* is set.
     """
     logger.info("Starte App in Umgebung '%s'...", settings.environment)
 
-    # --- DB anpingen (sanity check) ---
+    # --- Ping the DB (sanity check) ---
     from sqlalchemy import text
 
     try:
@@ -51,31 +51,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await session.execute(text("SELECT 1"))
         logger.info("DB-Verbindung OK (%s)", settings.database_url.split("@")[-1])
     except Exception as e:
-        # Wir brechen NICHT hart ab — in manchen Setups (z. B. Tests ohne DB)
-        # ist das OK. Wir loggen nur deutlich.
+        # We do NOT hard-fail — in some setups (e.g. tests without a DB)
+        # that is OK. We just log it clearly.
         logger.warning("DB-Ping fehlgeschlagen: %s", e)
 
-    # --- Admin-Seed ---
+    # --- Admin seed ---
     try:
         async with AsyncSessionLocal() as session:
             await seed_admin(session)
     except Exception as e:
         logger.warning("Admin-Seed fehlgeschlagen: %s", e)
 
-    # --- LangGraph-Checkpointer (Deep Research, siehe PLAN.md) ---
-    # Legt Checkpoint-Tabellen an + hält die Verbindungen für Threads/State.
-    # Schlägt Postgres fehl: Fallback auf InMemorySaver (nur geloggt).
+    # --- LangGraph checkpointer (Deep Research, see PLAN.md) ---
+    # Creates the checkpoint tables + holds the connections for threads/state.
+    # If Postgres fails: fallback to InMemorySaver (only logged).
     from app.agent.persistence import init_checkpointer, shutdown_checkpointer
 
     try:
         app.state.checkpointer = await init_checkpointer()
-    except Exception as e:  # noqa: BLE001 — App soll auch ohne Agent-DB laufen
+    except Exception as e:  # noqa: BLE001 — the app should run even without the agent DB
         logger.warning("Checkpointer-Init fehlgeschlagen: %s", e)
         app.state.checkpointer = None
 
-    yield  # <-- ab hier läuft die App und nimmt Requests an
+    yield  # <-- from here on the app is running and accepting requests
 
-    # Nach yield: Cleanup beim STOPP.
+    # After yield: cleanup at SHUTDOWN.
     try:
         await shutdown_checkpointer()
     except Exception as e:  # noqa: BLE001
@@ -84,17 +84,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 # ============================================================================
-# 2) APP ERZEUGEN
+# 2) CREATE THE APP
 # ============================================================================
 app = FastAPI(
     title="Fuchser API",
     description=(
-        "Ausführlich kommentiertes FastAPI-Starter-Kit mit JWT-Auth, "
-        "Refresh-Token-Rotation, Rollen (RBAC), PostgreSQL + Alembic."
+        "Fuchser — AI deep-research assistant: JWT auth, refresh-token "
+        "rotation, roles (RBAC), PostgreSQL + Alembic, LangGraph multi-agent "
+        "research pipeline with a Redis-backed worker."
     ),
     version="0.1.0",
     lifespan=lifespan,
-    # In Produktion wollen wir die auto-Docs vielleicht abschalten:
+    # In production we may want to turn off the auto-docs:
     docs_url="/docs" if settings.environment != "prod" else None,
     redoc_url="/redoc" if settings.environment != "prod" else None,
 )
@@ -102,36 +103,36 @@ app = FastAPI(
 # ============================================================================
 # 3) CORS — Cross-Origin Resource Sharing
 # ============================================================================
-# Ein Browser erlaubt per Default KEINE Requests an eine andere Origin als die
-# der geladenen Seite. CORS ist der Mechanismus, mit dem wir dem Browser sagen:
-# "OK, /api unter dieser Origin darf uns ansprechen."
+# By default a browser does NOT allow requests to an origin other than the one
+# of the loaded page. CORS is the mechanism with which we tell the browser:
+# "OK, /api under this origin is allowed to talk to us."
 #
-# In Entwicklung: Frontend auf :5173, Backend auf :8000 -> verschiedene Origins
-# -> ohne CORS würde der Browser jeden Request blockieren.
+# In development: frontend on :5173, backend on :8000 -> different origins
+# -> without CORS the browser would block every request.
 #
-# In Produktion (wenn das Backend das Frontend mit ausliefert) sind beide unter
-# der gleichen Origin -> CORS dann irrelevant.
+# In production (when the backend also serves the frontend) both live under
+# the same origin -> CORS is then irrelevant.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
-    allow_credentials=True,  # wichtig, falls man Cookies nutzt (hier: JWT im Header)
+    allow_credentials=True,  # important when using cookies (here: JWT in a header)
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
 # ============================================================================
-# 4) ROUTER INKLUDIEREN
+# 4) INCLUDE THE ROUTER
 # ============================================================================
 app.include_router(api_router)
 
 
 # ============================================================================
-# 5) WURZEL-ENGPUNKT (Health/Info)
+# 5) ROOT ENDPOINT (health/info)
 # ============================================================================
 @app.get("/", tags=["meta"])
 async def root():
-    """Kleiner Info-Endpunkt, damit '/' nicht 404 gibt."""
+    """Small info endpoint so '/' does not return 404."""
     return {
         "name": "Fuchser API",
         "version": "0.1.0",
@@ -147,32 +148,32 @@ async def root():
 
 @app.get("/health", tags=["meta"])
 async def health():
-    """Healthcheck für Docker/Load-Balancer. Sollte immer 200 liefern."""
+    """Healthcheck for Docker/load balancers. Should always return 200."""
     return {"status": "ok"}
 
 
 # ============================================================================
-# 6) PRODUKTION: Frontend ausliefern (vom Vite-Build)
+# 6) PRODUCTION: serve the frontend (from the Vite build)
 # ============================================================================
-# `app.frontend(...)` ist FastAPIs eingebaute Methode, ein gebautes Frontend
-# (z. B. das `dist/`-Verzeichnis eines Vite-Builds) auszuliefern — inklusive
-# SPA-Routing-Fallback (damit React-Routen wie /dashboard direkt funktionieren).
+# `app.frontend(...)` is FastAPI's built-in method for serving a built frontend
+# (e.g. the `dist/` directory of a Vite build) — including the SPA routing
+# fallback (so React routes like /dashboard work directly).
 #
-# Wir aktivieren das NUR, wenn ein gebautes Frontend existiert. In Entwicklung
-# läuft Vite separat (siehe docker-compose.yml).
+# We only enable this when a built frontend exists. In development
+# Vite runs separately (see docker-compose.yml).
 _frontend_dist = Path(__file__).resolve().parent.parent / "frontend_dist"
 if _frontend_dist.is_dir():
-    # app.frontend hat niedrige Priorität: API-Routen werden zuerst gematcht,
-    # danach erst Frontend-Dateien. So kollidieren /api/* und / nicht.
+    # app.frontend has low priority: API routes are matched first,
+    # and only then frontend files. This way /api/* and / never collide.
     app.frontend("/", directory=str(_frontend_dist))
     logger.info("Frontend wird ausgeliefert aus %s", _frontend_dist)
 
 
 # ============================================================================
-# 7) LOKALER START (ohne uvicorn-Kommando)
+# 7) LOCAL STARTUP (without the uvicorn command)
 # ============================================================================
-# Für `python -m app.main` oder IDE-Run-Knöpfe. In Docker nutzt man direkter
-# `uvicorn app.main:app --reload` (siehe Dockerfile / compose).
+# For `python -m app.main` or IDE run buttons. In Docker, one uses
+# `uvicorn app.main:app --reload` directly (see Dockerfile / compose).
 if __name__ == "__main__":
     import uvicorn
 

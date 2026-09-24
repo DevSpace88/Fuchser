@@ -1,6 +1,6 @@
-// components/ui/label.tsx — shadcn/ui Label (Beschriftung für Formularfelder).
-// Nutzt @radix-ui/react-label unter der Haube (Accessibility: verknüpft mit
-// dem dazugehörigen Input über htmlFor).
+// components/ui/label.tsx — shadcn/ui Label (caption for form fields).
+// Uses @radix-ui/react-label under the hood (accessibility: linked to the
+// associated input via htmlFor).
 
 import * as React from "react";
 import * as LabelPrimitive from "@radix-ui/react-label";

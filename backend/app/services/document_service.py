@@ -1,15 +1,15 @@
 """
-services/document_service.py — Upload + Text-Extraktion für Dokumente
-=======================================================================
+services/document_service.py — upload + text extraction for documents
+======================================================================
 
-Unterstützt (bewusst OHNE OCR — Scan-PDFs werden ehrlich abgelehnt
-statt schlecht gebaut; siehe PLAN/Diskussion):
-    * PDF  (pypdf)          — textbasierte PDFs, seitenweise
-    * DOCX (python-docx)    — Absätze + Tabellenzellen
-    * TXT / MD / CSV        — direkt dekodiert
+Supported (deliberately WITHOUT OCR — scanned PDFs are honestly rejected
+instead of badly processed; see PLAN/discussion):
+    * PDF  (pypdf)          — text-based PDFs, page by page
+    * DOCX (python-docx)    — paragraphs + table cells
+    * TXT / MD / CSV        — decoded directly
 
-Die Extraktion ist bewusst tolerant: Ein Fehler auf Seite 42 soll nicht
-das ganze Dokument killen — defekte Seiten werden übersprungen und gezählt.
+The extraction is deliberately tolerant: an error on page 42 should not
+kill the whole document — broken pages are skipped and counted.
 """
 
 import io
@@ -25,20 +25,20 @@ from app.models.research_project import ResearchProject
 
 logger = logging.getLogger(__name__)
 
-# Upload-Limit: 50 MB — EPUB-konvertierte PDFs bringen gern Image-Ballast
-# mit (30 MB+ bei gut markierbarem Text). Der EXTRAHIERTE Text ist eh auf
-# 1 MB Zeichen gekappt, die Rohdaten landen nie in der DB.
+# Upload limit: 50 MB — EPUB-converted PDFs like to bring image ballast
+# along (30 MB+ with well-selectable text). The EXTRACTED text is capped at
+# 1 MB characters anyway; the raw data never lands in the DB.
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".csv"}
 
 
 class DocumentError(Exception):
-    """Fehler beim Upload/Extraktion (Endpunkt übersetzt in 4xx)."""
+    """Error during upload/extraction (the endpoint translates it into 4xx)."""
 
 
 # ============================================================================
-# 1) TEXT-EXTRACTION je Dateityp
+# 1) TEXT EXTRACTION per file type
 # ============================================================================
 def _extract_pdf(data: bytes) -> str:
     from pypdf import PdfReader
@@ -49,7 +49,7 @@ def _extract_pdf(data: bytes) -> str:
     for i, page in enumerate(reader.pages):
         try:
             pages.append(page.extract_text() or "")
-        except Exception:  # noqa: BLE001 — einzelne defekte Seite überspringen
+        except Exception:  # noqa: BLE001 — skip a single broken page
             broken += 1
             logger.info("PDF-Seite %d nicht extrahierbar", i + 1)
     if broken:
@@ -62,7 +62,7 @@ def _extract_docx(data: bytes) -> str:
 
     doc = docx.Document(io.BytesIO(data))
     parts = [p.text for p in doc.paragraphs if p.text.strip()]
-    for table in doc.tables:  # Tabellen flach ausbreiten (Zellen als Zeilen)
+    for table in doc.tables:  # flatten tables out (cells as rows)
         for row in table.rows:
             cells = [c.text.strip() for c in row.cells if c.text.strip()]
             if cells:
@@ -71,7 +71,7 @@ def _extract_docx(data: bytes) -> str:
 
 
 def _extract_plain(data: bytes) -> str:
-    # utf-8 first, ältere deutsche Dateien sind gern latin-1
+    # utf-8 first; older German files are often latin-1
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
@@ -79,7 +79,7 @@ def _extract_plain(data: bytes) -> str:
 
 
 def extract_text(filename: str, data: bytes) -> str:
-    """Extrahiert Text je Endung und kappt auf MAX_TEXT_CHARS."""
+    """Extracts text based on the extension and caps it at MAX_TEXT_CHARS."""
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     try:
         if ext == ".pdf":
@@ -94,13 +94,13 @@ def extract_text(filename: str, data: bytes) -> str:
             )
     except DocumentError:
         raise
-    except Exception as e:  # noqa: BLE001 — Parser-Crash -> saubere 422 mit Grund
+    except Exception as e:  # noqa: BLE001 — parser crash -> clean 422 with a reason
         raise DocumentError(
             f"Datei konnte nicht gelesen werden ({type(e).__name__}): {e}"
         ) from e
 
     if not text.strip():
-        # Typisch: Scan-PDF ohne Textschicht -> ehrlich sein statt 0 Zeichen
+        # Typical: scanned PDF without a text layer -> be honest instead of 0 characters
         raise DocumentError(
             "Kein Text gefunden — handelt es sich um einen Scan? "
             "OCR (texterkennung) wird nicht unterstützt."
@@ -109,14 +109,14 @@ def extract_text(filename: str, data: bytes) -> str:
 
 
 # ============================================================================
-# 2) CRUD (immer ownership-gefiltert über get_project)
+# 2) CRUD (always ownership-filtered via get_project)
 # ============================================================================
 async def upload_document(
     session: AsyncSession,
     project: ResearchProject,
     upload: UploadFile,
 ) -> Document:
-    """Liest die Datei, extrahiert Text und speichert das Document."""
+    """Reads the file, extracts text and stores the Document."""
     data = await upload.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise DocumentError(f"Datei zu groß ({len(data) // (1024 * 1024)} MB, max. 50 MB).")
@@ -164,9 +164,9 @@ async def list_documents_for_chain(
     session: AsyncSession, project: ResearchProject
 ) -> list[Document]:
     """
-    Dokumente der GESAMTEN Unterhaltung: des Projekts plus aller Vorfahren
-    (parent_id-Kette). So bleiben hochgeladene Dateien über Follow-up-Fragen
-    hinweg verfügbar — der Chat „verliert" sie nie (User-Wunsch).
+    Documents of the ENTIRE conversation: the project's own plus all its
+    ancestors (parent_id chain). This keeps uploaded files available across
+    follow-up questions — the chat never "loses" them (user request).
     """
     all_docs: list[Document] = []
     seen_projects: set = set()
@@ -179,13 +179,13 @@ async def list_documents_for_chain(
             if current.parent_id
             else None
         )
-    # Älteste zuerst (Reihenfolge = Upload-Chronologie der Unterhaltung)
+    # Oldest first (order = upload chronology of the conversation)
     all_docs.sort(key=lambda d: d.created_at)
     return all_docs
 
 
 def documents_for_agent(session_documents: list[Document]) -> list[dict]:
-    """Kompakte Form für den Graph-State (Name + gekappter Text)."""
+    """Compact form for the graph state (name + capped text)."""
     return [
         {"name": d.filename, "text": d.extracted_text[:60_000]}
         for d in session_documents

@@ -1,45 +1,45 @@
 # ============================================================================
-# pyproject.toml — Zentrale Projektkonfiguration für das Backend
+# pyproject.toml — central project configuration for the backend
 # ============================================================================
-# In Python gibt es früher setup.py/setup.cfg, neuer ist EINE Datei für alles:
-# hier definieren wir Metadaten, Dependencies, Tool-Einstellungen.
-# Als Paketmanager verwenden wir `uv` (modern, sehr schnell).
+# In Python there used to be setup.py/setup.cfg; the newer approach is ONE file
+# for everything: here we define metadata, dependencies, tool settings.
+# As package manager we use `uv` (modern, very fast).
 
 [project]
 name = "fuchser-backend"
 version = "0.1.0"
-description = "Ausführlich kommentiertes FastAPI-Starter-Kit (Auth, DB, Migrations)."
+description = "Fuchser — AI deep-research assistant (FastAPI, LangGraph, SQLModel, React)."
 requires-python = ">=3.12"
 readme = "../README.md"
 
 # ----------------------------------------------------------------------------
-# Produktions-Dependencies
+# Production dependencies
 # ----------------------------------------------------------------------------
-# FastAPI selbst + Uvicorn (ASGI-Server, der FastAPI ausführt).
+# FastAPI itself + Uvicorn (the ASGI server that runs FastAPI).
 dependencies = [
-    # FastAPI + Server + Cli ("standard" zieht uvicorn, httptools etc.).
+    # FastAPI + server + CLI ("standard" pulls in uvicorn, httptools etc.).
     "fastapi[standard]>=0.118",
-    # Pydantic[email]: damit EmailStr funktioniert (zieht email-validator).
+    # Pydantic[email]: makes EmailStr work (pulls in email-validator).
     "pydantic[email]>=2.9",
-    # SQLModel: vereint SQLAlchemy (ORM) + Pydantic (Validierung) in EINEM Model.
-    # Empfehlung der FastAPI-Skill: SQLModel statt rohem SQLAlchemy verwenden.
+    # SQLModel: unifies SQLAlchemy (ORM) + Pydantic (validation) in ONE model.
+    # Recommendation of the FastAPI skill: use SQLModel instead of raw SQLAlchemy.
     "sqlmodel>=0.0.22",
-    # Async-Treiber für PostgreSQL (für die App selbst, async-Engine).
+    # Async driver for PostgreSQL (for the app itself, async engine).
     "asyncpg>=0.30",
-    # Sync-Treiber für PostgreSQL (für Alembic — siehe backend/alembic/env.py).
-    # Alembic läuft synchron, asyncpg geht dort nicht. psycopg3 ist der
-    # moderne Standard für sync-Zugriff (Nachfolger von psycopg2).
+    # Sync driver for PostgreSQL (for Alembic — see backend/alembic/env.py).
+    # Alembic runs synchronously, asyncpg does not work there. psycopg3 is the
+    # modern standard for sync access (successor of psycopg2).
     "psycopg[binary]>=3.2",
-    # Alembic: Migrations-Tool für Schema-Änderungen (ähnlich wie Laravel-Migrationen).
+    # Alembic: migration tool for schema changes (similar to Laravel migrations).
     "alembic>=1.13",
-    # Pydantic-Settings: lädt Konfiguration aus .env in typisierte Python-Objekte.
+    # Pydantic-Settings: loads configuration from .env into typed Python objects.
     "pydantic-settings>=2.5",
-    # JWT-Bibliothek. Wir nutzen sie LOW-LEVEL (encode/decode selbst),
-    # statt eine High-Level-Lib wie fastapi-jwt-auth (unmaintained).
+    # JWT library. We use it LOW-LEVEL (encode/decode ourselves),
+    # instead of a high-level lib like fastapi-jwt-auth (unmaintained).
     "pyjwt>=2.9",
-    # Password-Hashing (Argon2/Bcrypt). Moderner Ersatz für passlib (unmaintained).
+    # Password hashing (Argon2/Bcrypt). Modern replacement for passlib (unmaintained).
     "pwdlib[argon2,bcrypt]>=0.2.1",
-    # Python-dotenv, damit pydantic-settings die .env direkt liest.
+    # Python-dotenv, so pydantic-settings reads the .env directly.
     "python-dotenv>=1.0",
     "langgraph>=1.2.11",
     "langchain-deepseek>=1.1.0",
@@ -54,25 +54,25 @@ dependencies = [
 ]
 
 # ----------------------------------------------------------------------------
-# Dev-Dependencies (nur für Entwicklung/Tests, nicht in Produktion)
+# Dev dependencies (only for development/tests, not for production)
 # ----------------------------------------------------------------------------
 [dependency-groups]
 dev = [
     "pytest>=8.3",
-    "pytest-asyncio>=0.24",          # async Test-Unterstützung
-    "httpx>=0.27",                   # Async-HTTP-Client fürs Backend-Testen
-    "anyio>=4.4",                    # für httpx + async test
-    "ruff>=0.7",                     # Linter + Formatter (empfohlen von FastAPI-Skill)
-    # Für Tests mit echter Postgres-DB auf localhost: Wir nutzen in Tests eine
-    # SQLite-In-Memory-DB (siehe tests/conftest.py), daher kein weiterer Treiber nötig.
+    "pytest-asyncio>=0.24",          # async test support
+    "httpx>=0.27",                   # async HTTP client for backend testing
+    "anyio>=4.4",                    # for httpx + async tests
+    "ruff>=0.7",                     # linter + formatter (recommended by the FastAPI skill)
+    # For tests with a real Postgres DB on localhost: We use a SQLite in-memory
+    # DB in tests (see tests/conftest.py), so no additional driver is needed.
     "aiosqlite>=0.22.1",
     "greenlet>=3.5.4",
 ]
 
 # ----------------------------------------------------------------------------
-# FastAPI-Einstellungen: Wo liegt die App?
+# FastAPI settings: where is the app?
 # ----------------------------------------------------------------------------
-# Erlaubt `fastapi dev` / `fastapi run` ohne expliziten Dateipfad.
+# Allows `fastapi dev` / `fastapi run` without an explicit file path.
 [tool.fastapi]
 entrypoint = "app.main:app"
 
@@ -84,22 +84,22 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-# Auswahl an Regelsets:
+# Selection of rule sets:
 #   E/W  = pycodestyle (PEP8)
-#   F    = pyflakes (ungenutzte Imports etc.)
-#   I    = isort (Import-Reihenfolge)
-#   B    = bugbear (häufige Bug-Patterns)
-#   FAST = FastAPI-spezifische Regeln (sicherer Code)
-#   UP   = pyupgrade (modernere Python-Syntax)
+#   F    = pyflakes (unused imports etc.)
+#   I    = isort (import order)
+#   B    = bugbear (common bug patterns)
+#   FAST = FastAPI-specific rules (safer code)
+#   UP   = pyupgrade (more modern Python syntax)
 select = ["E", "W", "F", "I", "B", "FAST", "UP"]
 ignore = [
-    "B008",  # Depends(...) als Default-Argument ist in FastAPI idiomatisch.
+    "B008",  # Depends(...) as a default argument is idiomatic in FastAPI.
 ]
 
 # ----------------------------------------------------------------------------
 # Pytest
 # ----------------------------------------------------------------------------
 [tool.pytest.ini_options]
-asyncio_mode = "auto"               # async-Tests laufen automatisch als Koroutinen
+asyncio_mode = "auto"               # async tests automatically run as coroutines
 testpaths = ["tests"]
-pythonpath = ["."]                  # damit `import app...` in den Tests klappt
+pythonpath = ["."]                  # so `import app...` works in the tests

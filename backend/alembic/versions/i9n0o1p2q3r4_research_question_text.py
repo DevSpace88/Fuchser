@@ -4,7 +4,8 @@ Revision ID: i9n0o1p2q3r4
 Revises: h8m9n0o1p2q3
 Create Date: 2026-08-29
 
-Erlaubt lange Forschungsfragen / Prompts (bis 50.000 Zeichen) ohne VARCHAR(2000)-Begrenzung.
+Allows long research questions / prompts (up to 50,000 characters) without the
+VARCHAR(2000) limit.
 """
 
 from typing import Sequence, Union

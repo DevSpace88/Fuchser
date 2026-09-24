@@ -1,10 +1,10 @@
-// main.tsx — Einstiegspunkt der React-App.
+// main.tsx — entry point of the React app.
 //
-// Vite lädt diese Datei (siehe index.html). Hier:
-//   1) holen wir uns das #root-div,
-//   2) umhüllen die App mit dem AuthProvider (für den Login-State),
-//   3) aktivieren React Router (für die verschiedenen Seiten),
-//   4) lassen React die App rendern.
+// Vite loads this file (see index.html). Here we:
+//   1) grab the #root div,
+//   2) wrap the App with the AuthProvider (for the login state),
+//   3) enable React Router (for the various pages),
+//   4) have React render the app.
 
 import React from "react";
 import ReactDOM from "react-dom/client";

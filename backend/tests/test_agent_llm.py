@@ -1,16 +1,16 @@
 """
-tests/test_agent_llm.py — Provider-Auswahl in agent/llm.py (DeepSeek vs. GLM)
-=============================================================================
+tests/test_agent_llm.py — Provider selection in agent/llm.py (DeepSeek vs. GLM)
+===============================================================================
 
-Die Factory get_llm() entscheidet anhand der Settings, welches Modell-Objekt
-zurückkommt (oder None -> Echo-Modus). Wir patchen die Settings-Attribute
-direkt (kein .env-Gefummel) und prüfen die Kaskade:
+The factory get_llm() decides, based on the settings, which model object
+comes back (or None -> echo mode). We patch the settings attributes
+directly (no .env fiddling) and check the cascade:
 
-    glm gewählt + GLM-Key     -> ChatOpenAI mit z.ai-Coding-Endpoint
-    glm gewählt, nur DS-Key   -> ChatDeepSeek (Fallback)
-    deepseek + DS-Key         -> ChatDeepSeek
-    deepseek, nur GLM-Key     -> ChatOpenAI (Fallback)
-    gar kein Key              -> None (Echo-Modus)
+    glm selected + GLM key    -> ChatOpenAI with the z.ai coding endpoint
+    glm selected, DS key only -> ChatDeepSeek (fallback)
+    deepseek + DS key         -> ChatDeepSeek
+    deepseek, GLM key only    -> ChatOpenAI (fallback)
+    no key at all             -> None (echo mode)
 """
 
 import pytest
@@ -23,7 +23,7 @@ from app.core.config import get_settings
 
 @pytest.fixture
 def settings_patch(monkeypatch):
-    """Setzt Provider-Keys kontrolliert und räumt danach auf."""
+    """Sets provider keys in a controlled way and cleans up afterwards."""
     s = get_settings()
     stash = {attr: getattr(s, attr) for attr in ("llm_provider", "deepseek_api_key", "glm_api_key")}
 
@@ -42,8 +42,8 @@ async def test_glm_provider_uses_zai_endpoint(settings_patch):
     settings_patch("glm", deepseek="", glm="fake-glm-key")
     model = llm.get_llm()
     assert isinstance(model, ChatOpenAI)
-    # base_url muss der internationale Coding-Plan-Endpoint sein
-    # (NICHT bigmodel.cn!) — see docs.z.ai/devpack/quick-start.
+    # base_url must be the international coding-plan endpoint
+    # (NOT bigmodel.cn!) — see docs.z.ai/devpack/quick-start.
     assert "api.z.ai/api/coding" in model.openai_api_base
 
 

@@ -1,12 +1,12 @@
-// Test-Harness: führt die ECHTE linkifyCitations-Logik (als Plain-JS-Kopie)
-// gegen einen ECHTEN Report aus der DB aus und zählt verlinkt/unverlinkt.
+// Test harness: runs the REAL linkifyCitations logic (as a plain-JS copy)
+// against a REAL report from the DB and counts linked/unlinked.
 import { readFileSync } from "fs";
 
 const d = JSON.parse(readFileSync("/tmp/project.json", "utf8"));
 const report = d.report || "";
 const sources = d.sources || [];
 
-// === 1:1-Kopie der Regex-Logik aus frontend/src/lib/citations.ts (mit Fix) ===
+// === 1:1 copy of the regex logic from frontend/src/lib/citations.ts (with fix) ===
 function linkifyCitations(markdownText, sources) {
   if (!markdownText || !sources || sources.length === 0) return markdownText;
   const parts = markdownText.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
@@ -52,7 +52,7 @@ function linkifyCitations(markdownText, sources) {
 
 const result = linkifyCitations(report, sources);
 
-// Vorkommen von [n]-Mustern im Original vs. verlinkte im Ergebnis
+// Occurrences of [n] patterns in the original vs. linked ones in the result
 const citations = report.match(/\[[0-9][0-9\s,\-–]*\]/g) || [];
 const linked = (result.match(/\[\d+\]\(/g) || []).length;
 const dead = (result.match(/\[\d+\](?!\()/g) || []).length;
@@ -62,7 +62,7 @@ console.log("Quellen:", sources.length);
 console.log("Zitat-Vorkommen im Report-Text:", citations.length);
 console.log("VERLINKT:", linked, "| UNVERLINKT:", dead);
 
-// Zeige die UNVERLINKTEN mit Kontext (was sind das für Muster?)
+// Show the UNLINKED ones with context (what kind of patterns are they?)
 const ctx = [];
 let idx = 0;
 for (const m of result.matchAll(/\[([\d\s,\-–]{1,15})\](?!\()/g)) {
@@ -71,7 +71,7 @@ for (const m of result.matchAll(/\[([\d\s,\-–]{1,15})\](?!\()/g)) {
 }
 console.log("Unverlinkte Muster (Beispiele):", ctx);
 
-// Verteilung: wie viele Zitat-Zahlen > Quellenlänge (halluziniert)?
+// Distribution: how many citation numbers > source count (hallucinated)?
 const nums = [...new Set((report.match(/\[\d+\]|\[\d+\]\[\d+\]/g) || []).join(",").match(/\d+/g))].map(Number);
 const tooHigh = nums.filter((n) => n > sources.length);
 console.log("Zitierte Nummern über Quellenlänge (" + sources.length + "):", tooHigh);

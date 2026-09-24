@@ -1,40 +1,40 @@
 """
-agent/graph.py — Der Multi-Agent-Graph (Stufe 4, PLAN.md)
+agent/graph.py — the multi-agent graph (Stage 4, PLAN.md)
 ==========================================================
 
-LangGraph-Kernidee in 3 Sätzen:
-    1. Ein Graph hat einen STATE (hier: TypedDict) — das gemeinsame
-       "Gedächtnis", das durch die Nodes wandert.
-    2. Nodes sind Funktionen `state -> partial state`: sie lesen den State
-       und geben NUR die Felder zurück, die sie verändern.
-    3. Edges verdrahten die Nodes; START/END sind Sentinel-Knoten.
+LangGraph's core idea in 3 sentences:
+    1. A graph has a STATE (here: TypedDict) — the shared "memory"
+       that travels through the nodes.
+    2. Nodes are functions `state -> partial state`: they read the
+       state and return ONLY the fields they change.
+    3. Edges wire the nodes together; START/END are sentinel nodes.
 
-Stufe 4 — der KRITIKER-LOOP (der Grund, warum es ein GRAPH ist):
+Stage 4 — the CRITIC LOOP (the reason this is a GRAPH):
 
                     START
                       │
               ┌───────▼────────┐
-              │   SUPERVISOR   │  plant Sub-Fragen (JSON-planbar)
+              │   SUPERVISOR   │  plans sub-questions (JSON-plannable)
               └───────┬────────┘
                       │ conditional edge: FAN-OUT via Send
         ┌─────────────┼─────────────┐
         ▼             ▼             ▼
-   RESEARCHER     RESEARCHER   RESEARCHER     (parallel, je 1 Sub-Frage,
-        └─────────────┼─────────────┘           ReAct-Loop mit Websuche)
-                      │ (Join: Reducer mergt findings/sources)
+   RESEARCHER     RESEARCHER   RESEARCHER     (parallel, 1 sub-question each,
+        └─────────────┼─────────────┘           ReAct loop with web search)
+                      │ (Join: reducer merges findings/sources)
               ┌───────▼────────┐
-              │  SYNTHESIZER   │  Markdown-Report + Zitate, streamt Token
+              │  SYNTHESIZER   │  Markdown report + citations, streams tokens
               └───────┬────────┘
                       ▼
-              ┌───────────────┐   Lücken + Cap nicht erreicht?
+              ┌───────────────┐   gaps + cap not reached?
               │    CRITIC     │ ──────────────────────────────┐
               └───────┬───────┘                               │
-                      │ ok / Cap erreicht              Send pro Lücke
+                      │ ok / cap reached              Send per gap
                       ▼                                       │
-                     END  ◄─── (danach wieder Synthesizer) ◄──┘
+                     END  ◄─── (synthesizer again afterwards) ◄──┘
 
-Zwei Grenzen gegen Endlosigkeit: revision_count-Cap im State
-(MAX_REVISIONS) und langgraphs globales recursion_limit als Netz.
+Two limits against endlessness: the revision_count cap in the state
+(MAX_REVISIONS) and langgraph's global recursion_limit as a net.
 """
 
 import logging
@@ -58,31 +58,31 @@ logger = logging.getLogger(__name__)
 
 
 # ----------------------------------------------------------------------------
-# 1) STATE — das gemeinsame Gedächtnis des Graph-Laufs
+# 1) STATE — the shared memory of the graph run
 # ----------------------------------------------------------------------------
 class ResearchState(TypedDict):
     """
-    Der globale State. findings/sources sind REDUCER-Kanäle (operator.add):
-    Parallele Researcher-Instanzen liefern JEDE ihre Teilliste, und der
-    Reducer fügt sie zusammen — statt dass die letzte Instanz die anderen
-    überschreibt. Das ist DER Trick, der Multi-Agent in LangGraph trägt.
+    The global state. findings/sources are REDUCER channels (operator.add):
+    parallel researcher instances EACH deliver their partial list, and
+    the reducer merges them — instead of the last instance overwriting
+    the others. THIS is the trick that carries multi-agent in LangGraph.
 
-    critique/revision_count (Stufe 4): Bewertung des Kritikers und wie oft
-    er schon eine Überarbeitungsrunde ausgelöst hat (Cap: MAX_REVISIONS).
+    critique/revision_count (Stage 4): the critic's evaluation and how
+    often it has already triggered a revision round (cap: MAX_REVISIONS).
 
-    usage (Stufe 5): Token-Verbrauch je LLM-Call als Liste (Reducer) —
-    der Service summiert für Anzeige/Persistenz.
+    usage (Stage 5): token usage per LLM call as a list (reducer) —
+    the service sums it for display/persistence.
     """
 
     question: str
-    # Hochgeladene Dokumente ([{name, text}]) — der Researcher kann sie per
-    # document_search-Tool durchsuchen (kein Prompt-Stuffing langer Texte).
+    # Uploaded documents ([{name, text}]) — the researcher can search them
+    # via the document_search tool (no prompt-stuffing of long texts).
     documents: list[dict]
-    # Chat-Verlauf, den der Client mitgibt (Q/A-Paare, gekürzt). Supervisor
-    # & Synthesizer bekommen ihn in den Prompt — "nochmal recherchieren"
-    # funktioniert so auch nach fehlgeschlagenen Läufen.
+    # Chat history the client passes along (Q/A pairs, truncated). Supervisor
+    # & synthesizer get it in the prompt — this way "research again" keeps
+    # working even after failed runs.
     context_summary: str
-    sub_questions: list[str]  # vom Supervisor geplant (kein Reducer: overwrite)
+    sub_questions: list[str]  # planned by the supervisor (no reducer: overwrite)
     findings: Annotated[list[Finding], operator.add]
     sources: Annotated[list[Source], operator.add]
     report: str | None
@@ -92,15 +92,15 @@ class ResearchState(TypedDict):
 
 
 # ----------------------------------------------------------------------------
-# 2) FAN-OUTS / ROUTES — conditional edges als Send-Listen
+# 2) FAN-OUTS / ROUTES — conditional edges as Send lists
 # ----------------------------------------------------------------------------
 def fan_out_researchers(state: ResearchState) -> list[Send]:
     """
-    Hinter dem Supervisor: EIN Send pro Sub-Frage (der Start-Fan-out).
+    Behind the supervisor: ONE Send per sub-question (the initial fan-out).
 
-    Jeder Send trägt seinen eigenen Input-State (dict) mit — die Sub-Frage
-    reist also IM Send-Objekt, nicht im globalen State. Der Cap ist
-    Doppel-Sicherung (Prompt + Pydantic + hier).
+    Each Send carries its own input state (dict) — the sub-question
+    travels IN the Send object, not in the global state. The cap is
+    doubly secured (prompt + Pydantic + here).
     """
     emit("node", node="supervisor", status="end", planned=len(state.get("sub_questions", [])))
     return [
@@ -118,11 +118,11 @@ def fan_out_researchers(state: ResearchState) -> list[Send]:
 
 def route_after_critic(state: ResearchState) -> list[Send] | str:
     """
-    Hinter dem Kritiker: DER Loop der Stufe 4.
+    Behind the critic: THE Stage 4 loop.
 
-    Bei "gaps" UND Revisionen im Budget geht es mit Sends für die Lücken-
-    Fragen zurück zu den Researchern (danach läuft die normale Kante
-    researcher -> synthesizer wieder). Sonst: END.
+    On "gaps" AND revisions within the budget, Sends for the gap
+    questions go back to the researchers (afterwards the normal edge
+    researcher -> synthesizer runs again). Otherwise: END.
     """
     critique = state.get("critique") or {}
     gaps = critique.get("gaps", [])
@@ -136,36 +136,36 @@ def route_after_critic(state: ResearchState) -> list[Send] | str:
 
 
 # ----------------------------------------------------------------------------
-# 3) GRAPH — Nodes + Edges, kompiliert (mit optionalem Checkpointer)
+# 3) GRAPH — nodes + edges, compiled (with an optional checkpointer)
 # ----------------------------------------------------------------------------
 def build_research_graph(
     checkpointer=None,
     llm: BaseChatModel | None = None,
 ) -> CompiledStateGraph:
     """
-    Baut den Stufe-4-Graphen mit Kritiker-Loop.
+    Builds the Stage 4 graph with the critic loop.
 
-    `checkpointer`:  persistence.get_checkpointer() → Threads in Postgres.
-    `llm`:           Injektionsstelle für Tests (Fake-Chat-Modelle). None
-                     heißt hier "Factory nutzen" — ohne Key Echo-Modus.
+    `checkpointer`:  persistence.get_checkpointer() → threads in Postgres.
+    `llm`:           injection point for tests (fake chat models). None
+                     here means "use the factory" — without a key, echo mode.
     """
     builder = StateGraph(ResearchState)
-    # partial injiziert das (Fake-)LLM in jeden Node — dieselbe Technik,
-    # mit der FastAPI Dependencies in Endpunkte spritzt.
+    # partial injects the (fake) LLM into every node — the same technique
+    # FastAPI uses to inject dependencies into endpoints.
     builder.add_node("supervisor", partial(supervisor_node, llm=llm))
     builder.add_node("researcher", partial(researcher_node, llm=llm))
     builder.add_node("synthesizer", partial(synthesizer_node, llm=llm))
     builder.add_node("critic", partial(critic_node, llm=llm))
 
     builder.add_edge(START, "supervisor")
-    # Conditional edge statt normaler Kante: das ist das Fan-out.
-    # Das dritte Argument listet die möglichen Ziel-Nodes (für die
-    # Graph-Visualisierung/das Zeichnen des State-Diagramms).
+    # Conditional edge instead of a normal edge: this is the fan-out.
+    # The third argument lists the possible target nodes (for the graph
+    # visualization/drawing the state diagram).
     builder.add_conditional_edges("supervisor", fan_out_researchers, ["researcher"])
-    # Join: feuert erst, wenn ALLE Researcher-Instanzen des Supersteps
-    # fertig sind. Danach synthetisieren …
+    # Join: fires only when ALL researcher instances of the superstep are
+    # done. Then synthesize …
     builder.add_edge("researcher", "synthesizer")
-    # … und der Kritiker entscheidet: END oder nochmal recherchieren.
+    # … and the critic decides: END or research again.
     builder.add_edge("synthesizer", "critic")
     builder.add_conditional_edges("critic", route_after_critic, ["researcher", END])
 

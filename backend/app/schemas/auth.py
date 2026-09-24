@@ -1,26 +1,26 @@
 """
-schemas/auth.py — Pydantic-Schemas für Auth-Eingaben/-Ausgaben
-==============================================================
+schemas/auth.py — Pydantic schemas for auth inputs/outputs
+===========================================================
 
-WARUM eigene Schemas, wenn wir doch SQLModel haben?
+WHY separate schemas when we already have SQLModel?
 ---------------------------------------------------
-SQLModel vereint ORM + Pydantic, aber das bedeutet auch: das ORM-Modell
-(`User` in models/) hat Felder wie `hashed_password`, `is_active`, `role`,
-die NICHT nach draußen gehören. Würden wir das User-Modell direkt als
-Antwort zurückgeben, würde (mit exclude=True nur teilweise helfen) leicht
-ein Internal Field durchrutschen.
+SQLModel unites ORM + Pydantic, but that also means: the ORM model
+(`User` in models/) has fields like `hashed_password`, `is_active`, `role`
+that do NOT belong on the outside. If we returned the User model directly as
+a response, an internal field could easily slip through (exclude=True helps
+only partially).
 
-Saubere Trennung:
-  - models/user.py        = DB-Zustand (was wird gespeichert?)
-  - schemas/auth.py       = API-Zustand  (was geht rein/raus?)
+Clean separation:
+  - models/user.py        = DB state   (what gets stored?)
+  - schemas/auth.py       = API state  (what goes in/out?)
 
-Für jeden Anwendungsfall ein eigenes, minimal frohes Schema:
-  - UserCreate  -> Eingabe beim Registrieren (email + password + optional name)
-  - UserLogin   -> Eingabe beim Login (email + password)
-  - UserRead    -> Ausgabe bei /me, /users  (ohne Passwort!)
-  - Token       -> einzelnes JWT
-  - TokenPair   -> Access + Refresh zusammen (was /login zurückgibt)
-  - RefreshIn   -> Eingabe bei /refresh (nur der refresh_token-String)
+One minimal schema per use case:
+  - UserCreate  -> input on registration (email + password + optional name)
+  - UserLogin   -> input on login (email + password)
+  - UserRead    -> output at /me, /users (without the password!)
+  - Token       -> a single JWT
+  - TokenPair   -> access + refresh together (what /login returns)
+  - RefreshIn   -> input at /refresh (just the refresh_token string)
 """
 
 from datetime import datetime
@@ -32,26 +32,26 @@ from app.models.user import UserRole
 
 
 # ----------------------------------------------------------------------------
-# Eingaben (vom Client geschickt)
+# Inputs (sent by the client)
 # ----------------------------------------------------------------------------
 class UserCreate(BaseModel):
-    """Payload für POST /auth/register."""
+    """Payload for POST /auth/register."""
 
-    # EmailStr = Pydantic-Validierung auf echte E-Mail-Syntax.
-    # (Erfordert das Paket "email-validator" — mit pydantic[email] oder
-    #  email-validator installiert. Siehe pyproject.toml.)
+    # EmailStr = Pydantic validation for real email syntax.
+    # (Requires the package "email-validator" — installed via pydantic[email]
+    #  or email-validator. See pyproject.toml.)
     email: EmailStr
-    # Min/Max Length als einfache Validierung. Strengere Passwort-Policy
-    # (Groß/Klein/Ziffer/Zeichen) ließe sich mit Field(pattern=...) ergänzen.
+    # Min/max length as simple validation. A stricter password policy
+    # (upper/lower/digit/special character) could be added via Field(pattern=...).
     password: str = Field(min_length=8, max_length=128)
     full_name: str | None = Field(default=None, max_length=255)
 
 
 class UserLogin(BaseModel):
-    """Payload für POST /auth/login (JSON-Variante).
+    """Payload for POST /auth/login (JSON variant).
 
-    ACHTUNG: Daneben unterstützen wir auch den Standard-OAuth2-Password-Flow
-    mit Form-Daten (für den Authorize-Button in /docs). Siehe api/v1/auth.py.
+    NOTE: In addition, we also support the standard OAuth2 password flow
+    with form data (for the Authorize button in /docs). See api/v1/auth.py.
     """
 
     email: EmailStr
@@ -59,23 +59,23 @@ class UserLogin(BaseModel):
 
 
 class RefreshIn(BaseModel):
-    """Payload für POST /auth/refresh: der (alte) Refresh-Token."""
+    """Payload for POST /auth/refresh: the (old) refresh token."""
 
     refresh_token: str
 
 
 # ----------------------------------------------------------------------------
-# Ausgaben (vom Server zurückgegeben)
+# Outputs (returned by the server)
 # ----------------------------------------------------------------------------
-# `model_config = ConfigDict(from_attributes=True)` macht Folgendes:
-# Erlaubt Pydantic, das Schema aus einem ORM-Objekt zu konstruieren
-# (z. B. UserRead.model_validate(user_orm_instance)). Pydantic liest die
-# Attribute per getattr — praktisch, wenn man ein ORM-Modell in der Response
-# returned und FastAPI es automatisch konvertieren soll.
+# `model_config = ConfigDict(from_attributes=True)` does the following:
+# It allows Pydantic to construct the schema from an ORM object
+# (e.g. UserRead.model_validate(user_orm_instance)). Pydantic reads the
+# attributes via getattr — handy when you return an ORM model in the response
+# and want FastAPI to convert it automatically.
 class UserRead(BaseModel):
-    """Öffentliche User-Daten, wie sie von /me oder /users kommen.
+    """Public user data, as returned by /me or /users.
 
-    Enthält bewusst KEIN Passwort und keine internen Felder.
+    Deliberately contains NO password and no internal fields.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -89,22 +89,22 @@ class UserRead(BaseModel):
 
 
 class Token(BaseModel):
-    """Ein einzelnes JWT, wie es im Authorization-Header geschickt wird."""
+    """A single JWT, as sent in the Authorization header."""
 
     access_token: str
     token_type: str = "bearer"
 
 
 class TokenPair(BaseModel):
-    """Was /login (und /refresh) zurückgeben: Access + Refresh zusammen.
+    """What /login (and /refresh) return: access + refresh together.
 
-    Der Client speichert den Refresh-Token, um bei abgelaufenem Access-Token
-    einen neuen zu holen, ohne sich neu einloggen zu müssen.
+    The client stores the refresh token so that, when the access token
+    expires, it can fetch a new one without having to log in again.
     """
 
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
-    # Wir geben die User-Daten gleich mit — so kann das Frontend sofort den
-    # eingeloggten User anzeigen, ohne einen Extra-/me-Aufruf.
+    # We include the user data right away — this lets the frontend display
+    # the logged-in user immediately, without an extra /me call.
     user: UserRead

@@ -1,9 +1,9 @@
 // ============================================================================
-// lib/research.ts — Typen + API-Helfer für Recherche-Projekte (PLAN.md Stufe 1)
+// lib/research.ts — types + API helpers for research projects (PLAN.md level 1)
 // ============================================================================
 //
-// Die Typen spiegeln backend/app/schemas/research.py (ResearchProjectOut).
-// Alle Aufrufe laufen durch apiFetch (JWT + Auto-Refresh inklusive).
+// The types mirror backend/app/schemas/research.py (ResearchProjectOut).
+// All calls go through apiFetch (JWT + auto-refresh included).
 
 import { apiFetch } from "./api";
 
@@ -23,22 +23,22 @@ export interface Usage {
 export interface ResearchProject {
   id: string;
   question: string;
-  title: string | null; // Anzeigename (umbenennbar, steuert PDF-Titel)
-  conversation_id: string | null; // zugehörige Unterhaltung
+  title: string | null; // display name (renameable, drives the PDF title)
+  conversation_id: string | null; // associated conversation
   depth: "quick" | "deep";
   outline: {
     title: string;
     abstract: string;
     chapters: { title: string; focus: string }[];
-  } | null; // Deep-Gliederung (überlebt Reloads)
+  } | null; // deep outline (survives reloads)
   status: "queued" | "running" | "done" | "error";
   report: string | null;
   error: string | null;
   sources: Source[] | null;
-  chapters: { title: string; content: string }[] | null; // fertige Deep-Kapitel
+  chapters: { title: string; content: string }[] | null; // finished deep chapters
   usage: Usage | null;
-  parent_id: string | null; // gesetzt bei Follow-ups
-  trace: object[] | null; // Ausführungs-Historie (Sidepanel-Timeline)
+  parent_id: string | null; // set for follow-ups
+  trace: object[] | null; // execution history (side panel timeline)
   thread_id: string;
   created_at: string;
   updated_at: string;
@@ -68,7 +68,7 @@ export function createResearch(
 }
 
 // ----------------------------------------------------------------------------
-// Unterhaltungen (Google-AI-Studio-Modell): Historie listet CHATS.
+// Conversations (Google AI Studio model): the history lists CHATS.
 // ----------------------------------------------------------------------------
 export interface Conversation {
   id: string;
@@ -133,9 +133,9 @@ export function deleteResearch(id: string): Promise<void> {
 }
 
 // ----------------------------------------------------------------------------
-// PDF-Download: Echter Datei-Download (Blob), KEIN window.print().
-// Ein <a href> reicht nicht, weil der Authorization-Header mit MUSS —
-// also fetch → Blob → ObjectURL → Klick auf unsichtbaren <a>.
+// PDF download: a real file download (blob), NOT window.print().
+// An <a href> is not enough because the Authorization header MUST come along —
+// so: fetch → blob → object URL → click on an invisible <a>.
 // ----------------------------------------------------------------------------
 import { doRefresh, getFreshAccessToken } from "./api";
 
@@ -156,13 +156,13 @@ export async function downloadResearchPdf(id: string): Promise<void> {
       const body = await resp.json();
       if (body?.detail) detail = body.detail;
     } catch {
-      /* kein JSON */
+      /* no JSON */
     }
     throw new Error(detail);
   }
 
-  // Dateiname aus dem Content-Disposition-Header nehmen (Server liefert ihn
-  // RFC-konform, auch mit Umlauten via filename*=UTF-8''…).
+  // Take the file name from the Content-Disposition header (the server
+  // delivers it RFC-compliant, even with umlauts via filename*=UTF-8''…).
   const disposition = resp.headers.get("content-disposition") ?? "";
   const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/);
   const asciiMatch = disposition.match(/filename="?([^";]+)"?/);
@@ -183,13 +183,13 @@ export async function downloadResearchPdf(id: string): Promise<void> {
 
 
 // ----------------------------------------------------------------------------
-// Dokumenten-Upload (PDF/DOCX/TXT/MD/CSV): multipart mit Auth-Header.
-// apiFetch kann kein multipart (setzt JSON-Header) -> eigener Weg mit
-// demselben 401->Refresh->Retry-Muster.
+// Document upload (PDF/DOCX/TXT/MD/CSV): multipart with an auth header.
+// apiFetch cannot do multipart (it sets JSON headers) -> our own path with
+// the same 401->refresh->retry pattern.
 // ----------------------------------------------------------------------------
 export interface DocumentInfo {
   id: string;
-  project_id: string; // Eigentümer-Projekt (Ketten-Sicht: Löschen braucht es)
+  project_id: string; // owner project (chain view: deleting needs it)
   filename: string;
   mime_type: string;
   size_bytes: number;
@@ -206,7 +206,7 @@ export async function uploadDocuments(
     return fetch(`/api/v1/research/${projectId}/documents`, {
       method: "POST",
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-      body: form, // Content-Type setzt der Browser selbst (boundary!)
+      body: form, // the browser sets Content-Type itself (boundary!)
     });
   };
 
@@ -221,7 +221,7 @@ export async function uploadDocuments(
       const body = await resp.json();
       if (body?.detail) detail = body.detail;
     } catch {
-      /* kein JSON */
+      /* no JSON */
     }
     throw new Error(detail);
   }

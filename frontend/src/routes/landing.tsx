@@ -1,8 +1,8 @@
-// routes/landing.tsx — Die Landingpage für ausgeloggte Besucher.
+// routes/landing.tsx — the landing page for logged-out visitors.
 // ============================================================================
-// Präsentiert Fuchser: Hero mit modernem Mesh/Glow-Effekt, interaktivem
-// Live-Demo-Kartenwechsler (simuliert autonome Agenten-Recherche),
-// Feature-Grid und detaillierter LangGraph-Pipeline.
+// Presents Fuchser: hero with a modern mesh/glow effect, an interactive
+// live-demo card switcher (simulates autonomous agent research),
+// a feature grid and a detailed LangGraph pipeline.
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 
 // ----------------------------------------------------------------------------
-// 1) LIVE-DEMO DATA: Verschiedene interaktive Beispiel-Recherchen
+// 1) LIVE DEMO DATA: various interactive example research runs
 // ----------------------------------------------------------------------------
 interface DemoItem {
   id: string;
@@ -97,17 +97,17 @@ function DemoCard() {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const currentDemo = DEMO_ITEMS[selectedIdx];
 
-  const [phase, setPhase] = useState(0); // 0=planen, 1=recherchieren, 2=antwort
+  const [phase, setPhase] = useState(0); // 0=plan, 1=research, 2=answer
   const typed = useTypewriter(phase === 2 ? currentDemo.answer : "");
 
-  // Wenn der Tab gewechselt wird, starte die Phase von vorne
+  // When the tab changes, restart the phase from the beginning
   const handleSelectTab = (idx: number) => {
     if (idx === selectedIdx) return;
     setSelectedIdx(idx);
     setPhase(0);
   };
 
-  // Phasen-Loop: planen (1.4s) → recherchieren (2.0s) → tippen → Pause → von vorn
+  // Phase loop: plan (1.4s) → research (2.0s) → type → pause → start over
   useEffect(() => {
     if (phase === 0) {
       const t = setTimeout(() => setPhase(1), 1400);
@@ -141,7 +141,7 @@ function DemoCard() {
         </div>
       </div>
 
-      {/* Interaktive Prompt-Tabs */}
+      {/* Interactive prompt tabs */}
       <div className="mb-4 flex flex-wrap gap-1.5">
         {DEMO_ITEMS.map((item, idx) => (
           <button
@@ -158,7 +158,7 @@ function DemoCard() {
         ))}
       </div>
 
-      {/* Frage */}
+      {/* Question */}
       <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
         <div className="flex items-start gap-2">
           <span className="rounded bg-primary/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-primary">
@@ -168,7 +168,7 @@ function DemoCard() {
         </div>
       </div>
 
-      {/* Sub-Agenten-Pipeline */}
+      {/* Sub-agent pipeline */}
       <div className="mt-3.5 grid gap-2 sm:grid-cols-3">
         {currentDemo.subQuestions.map((q, idx) => {
           const done = phase > 1;
@@ -194,7 +194,7 @@ function DemoCard() {
         })}
       </div>
 
-      {/* Antwort-Streaming: Fester Bereich, der den vollständigen Text von Anfang an aufnimmt */}
+      {/* Answer streaming: fixed area that holds the full text from the start */}
       <div className="mt-4 min-h-[8.5rem] sm:min-h-[7rem] rounded-xl border border-border/50 bg-muted/60 p-4 text-sm leading-relaxed text-foreground">
         {phase === 0 && (
           <div className="flex items-center gap-2 text-muted-foreground">
@@ -222,7 +222,7 @@ function DemoCard() {
         )}
       </div>
 
-      {/* Quellen-Chips */}
+      {/* Source chips */}
       <div className="mt-3 flex min-h-[2rem] items-center flex-wrap gap-1.5">
         {(phase === 2 ? currentDemo.sources : []).map((s, i) => (
           <span
@@ -323,7 +323,7 @@ export function LandingPage() {
     <div className="min-h-screen overflow-x-hidden">
       {/* ============ HERO ============ */}
       <section className="relative mx-auto max-w-6xl px-4 pt-8 pb-16 text-center sm:px-6 sm:pt-20 sm:pb-32">
-        {/* Glow & Mesh-Hintergrund */}
+        {/* Glow & mesh background */}
         <div
           className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[32rem] blur-3xl opacity-70"
           style={{
@@ -376,7 +376,7 @@ export function LandingPage() {
           )}
         </div>
 
-        {/* Vertrauens-Punkte */}
+        {/* Trust points */}
         <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <Check className="h-3.5 w-3.5 text-primary" /> Keine Kreditkarte nötig
@@ -389,7 +389,7 @@ export function LandingPage() {
           </span>
         </div>
 
-        {/* Live-Demo */}
+        {/* Live demo */}
         <div className="mx-auto mt-12 max-w-2xl">
           <DemoCard />
         </div>
@@ -467,7 +467,7 @@ export function LandingPage() {
                     </div>
                   )}
 
-                  {/* Eleganter Pfeil zum nächsten Schritt (Desktop) */}
+                  {/* Elegant arrow to the next step (desktop) */}
                   {i < PIPELINE.length - 1 && (
                     <div className="pointer-events-none absolute -right-3 top-1/2 -translate-y-1/2 z-10 hidden lg:flex h-6 w-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm">
                       <ArrowRight className="h-3 w-3" />

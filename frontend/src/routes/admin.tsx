@@ -1,11 +1,11 @@
-// routes/admin.tsx — Admin-Seite.
-// Demonstriert AUTORISIERUNG auf Frontend-Seite: nur User mit role==="admin".
+// routes/admin.tsx — admin page.
+// Demonstrates AUTHORIZATION on the frontend side: only users with role==="admin".
 //
-// ACHTUNG: Das ist nur UX (Benutzerfreundlichkeit), KEINE Sicherheit!
-// Die echte Autorisierung macht das BACKEND (require_admin-Dependency).
-// Ein findiger User könnte die Frontend-Prüfung umgehen — aber der API-Call
-// auf /api/v1/users würde dann 403 liefern. Frontend-Checks sind Komfort,
-// Backend-Checks sind Sicherheit.
+// ATTENTION: This is only UX (user-friendliness), NOT security!
+// The real authorization is done by the BACKEND (require_admin dependency).
+// A crafty user could bypass the frontend check — but the API call
+// to /api/v1/users would then return 403. Frontend checks are convenience,
+// backend checks are security.
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
@@ -21,8 +21,8 @@ export function AdminPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Listen aller User + aller Recherchen. Backend prüft: Admin?
-    // Wenn nicht -> 403, und wir zeigen die Fehlermeldung an.
+    // Lists of all users + all research runs. The backend checks: admin?
+    // If not -> 403, and we show the error message.
     (async () => {
       try {
         const [userData, researchData] = await Promise.all([

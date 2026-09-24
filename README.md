@@ -1,288 +1,276 @@
-# Fuchser — FastAPI-Starter-Kit (Lern-Vorlage)
+# Fuchser — AI Deep-Research Assistant
 
-Ein vollständiges, **ausführlich kommentiertes** FastAPI-Starter-Kit, vergleichbar
-mit einem Laravel-Starter-Kit (Inertia + React + shadcn) — nur für FastAPI.
+Fuchser is an AI research assistant: ask a question, and a LangGraph multi-agent
+system plans the research, searches the web, and writes a cited report — streaming
+every step live to a React frontend.
 
-Es zeigt, wie man in FastAPI richtig anschließt:
+Built with **FastAPI + SQLModel + PostgreSQL**, **LangGraph**, **Redis**, and
+**React + Vite + TypeScript + Tailwind**.
 
-- ✅ **Authentifizierung** (Register/Login via E-Mail + Passwort, JWT)
-- ✅ **Access-Token + Refresh-Token** (mit Rotation & DB-Speicherung → revokabel)
-- ✅ **Autorisierung** (Rollen `user` / `admin`, Dependencies wie `require_admin`)
-- ✅ **Datenbank** (PostgreSQL + **SQLModel** + **Alembic**-Migrations)
-- ✅ **Frontend** (React + Vite + TypeScript + **shadcn/ui** + Tailwind)
-- ✅ **Docker** (`docker compose up` startet alles)
-- ✅ **Tests** (pytest + httpx)
-
-> Der gesamte Code ist mit Lern-Kommentaren auf **Deutsch** versehen.
-> Jede Schicht erklärt *warum*, nicht nur *was*.
+> **Note on language:** the product itself is German (UI, prompts, generated
+> reports). Code comments and this README are English.
 
 ---
 
-## Schnellstart
+## Features
 
-```bash
-# 1) Umgebungsvariablen anlegen (einmalig)
-cp .env.example .env
-# SECRET_KEY neu generieren:
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-# Trage das Ergebnis als SECRET_KEY in die .env ein.
-
-# 2) Alles starten (DB + Backend + Frontend)
-docker compose up --build
-
-# 3) Im Browser öffnen:
-#    Frontend:  http://localhost:5173
-#    API-Docs:  http://localhost:8000/docs
-#    Als Admin einloggen mit den Werten aus .env (SEED_ADMIN_*)
-```
-
-Das erste Mal dauert länger (Image-Build + npm install). Danach startet es in Sekunden.
-
----
-
-## Architektur-Überblick
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                         Browser                                │
-│   http://localhost:5173  (React-SPA, Vite-Dev-Server)         │
-└──────────────────────────┬───────────────────────────────────┘
-                           │ fetch /api/...  (mit JWT im Header)
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│                      Vite-Dev-Proxy                            │
-│   /api/* und /token/* werden an das Backend weitergereicht     │
-│   (deswegen gleiche Origin im Browser — kein CORS-Problem)     │
-└──────────────────────────┬───────────────────────────────────┘
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│                FastAPI-Backend  :8000                          │
-│   api/v1/auth, api/v1/users                                    │
-│   ┌────────────────────────────────────────────────────────┐  │
-│   │ Dependencies: get_current_user, require_admin           │  │
-│   │ Services:     auth_service (Register/Login/Refresh)     │  │
-│   │ Security:     pwdlib-Hashing, PyJWT-Encode/Decode       │  │
-│   └────────────────────────────────────────────────────────┘  │
-└──────────────────────────┬───────────────────────────────────┘
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│                PostgreSQL  :5432                               │
-│   Tabellen: users, refresh_tokens  (via SQLModel + Alembic)   │
-└──────────────────────────────────────────────────────────────┘
-```
+- **Multi-agent deep research** (LangGraph): a supervisor decomposes your question
+  into sub-questions, parallel ReAct researchers search the web (Tavily or
+  DuckDuckGo), a synthesizer writes a Markdown report with citations, and a critic
+  loop iterates until the quality bar is met (with a revision cap).
+- **Deep report mode**: 30+ page reports — outline generation with user approval,
+  per-chapter research fan-out, sequential chapter writers, and an APA/IEEE
+  bibliography.
+- **Live streaming (SSE)**: watch agents work in real time — tokens, sub-questions,
+  sources, and the outline as it is produced. The frontend also renders a live
+  agent-graph visualization (`@xyflow/react`).
+- **Document upload**: attach PDF/DOCX/TXT/MD/CSV files to a project; text is
+  extracted and searchable by the researcher agents.
+- **Follow-up conversations**: ask questions about a finished report; the agent
+  uses the research as context.
+- **PDF export**: download finished reports as PDF (xhtml2pdf).
+- **Authentication**: JWT access + refresh tokens with rotation and DB-hashed
+  (revocable) refresh tokens, roles `user`/`admin`, Argon2 password hashing.
+- **Worker architecture**: research runs execute in a separate worker process,
+  fed by a Redis queue with PubSub progress events — runs survive API reloads.
+  Heartbeats + orphaned-run requeue provide self-healing; chapters are persisted
+  incrementally, so interrupted runs can resume cheaply.
+- **Switchable LLM provider**: DeepSeek or Z.ai GLM (Coding Plan endpoint) —
+  selected via `LLM_PROVIDER`, including token/cost usage tracking.
 
 ---
 
-## Projektstruktur
+## Architecture
 
 ```
-awesome-project/
-├── docker-compose.yml        # Orchestriert DB + Backend + Frontend
-├── .env.example              # Vorlage für Umgebungsvariablen
-├── README.md                 # Diese Datei
-├── legacy/                   # Alte, einfache main.py (Tutorial) als Referenz
+                        ┌─────────────────────────────┐
+                        │           Browser           │
+                        │   React SPA (Vite build)    │
+                        └──────────────┬──────────────┘
+                                       │ fetch /api/*  (JWT Bearer)
+                                       ▼
+                 ┌───────────────────────────────────────────┐
+                 │  dev: Vite dev proxy    prod: nginx       │
+                 │  forwards /api/* to the backend           │
+                 └─────────────────────┬─────────────────────┘
+                                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      FastAPI backend (:8000)                     │
+│   /api/v1/auth   /api/v1/users   /api/v1/research               │
+│   /api/v1/conversations                                          │
+│   ┌───────────────────────────────────────────────────────────┐ │
+│   │ Dependencies: get_current_user, RequireAdmin              │ │
+│   │ Services:     auth · research · document · conversation   │ │
+│   │ Security:     pwdlib (Argon2) + PyJWT                     │ │
+│   └───────────────────────────────────────────────────────────┘ │
+└───────┬─────────────────────────────────────────────┬───────────┘
+        │ enqueue run,                                 │ asyncpg
+        │ stream progress via PubSub → SSE             ▼
+        ▼                                      ┌────────────────────┐
+┌──────────────────┐    checkpoints / results  │ PostgreSQL :5432   │
+│ Redis :6379      │◄─────────────────────────►│ users, refresh_    │
+│ queue + PubSub   │                           │ tokens, research_  │
+└────────┬─────────┘                           │ projects, documents│
+         │ BLPOP                               │ conversations +    │
+         ▼                                     │ LangGraph tables   │
+┌───────────────────────────────┐              └────────────────────┘
+│ Worker (python -m app.worker) │
+│  LangGraph multi-agent graph: │
+│  supervisor → researchers →   │
+│  synthesizer → critic         │
+└───────────────────────────────┘
+```
+
+The API stays responsive because the heavy agent work happens in the worker:
+`POST /api/v1/research/{id}/run` pushes the run onto a Redis queue and returns an
+SSE stream; the worker picks it up, executes the graph, and publishes progress
+over Redis PubSub, which the endpoint forwards to the client.
+
+---
+
+## Project structure
+
+```
+Fuchser/
+├── docker-compose.yml        # Production stack (Coolify): db, redis, backend, worker, frontend
+├── .env.example              # Environment variable template
 │
 ├── backend/
-│   ├── Dockerfile            # FastAPI-Image
-│   ├── pyproject.toml        # Dependencies (uv)
-│   ├── alembic.ini           # Migrations-Konfiguration
-│   ├── alembic/              # Migrations (env.py + versions/)
+│   ├── Dockerfile            # Multi-stage build (uv sync → slim runner)
+│   ├── pyproject.toml        # Dependencies (uv), ruff + pytest config
+│   ├── alembic.ini
+│   ├── alembic/              # Migrations (env.py + 14 versions)
+│   ├── scripts/              # Ops helpers (smoke test, source recovery)
 │   ├── app/
-│   │   ├── main.py           # App-Erstellung, Router, Lifespan, CORS
-│   │   ├── core/
-│   │   │   ├── config.py     # Einstellungen aus .env (pydantic-settings)
-│   │   │   ├── db.py         # Async-Engine + get_session (Dependency)
-│   │   │   ├── security.py   # Hashing (pwdlib) + JWT (PyJWT)
-│   │   │   └── deps.py       # Auth-Dependencies (current_user, admin)
-│   │   ├── models/           # SQLModel-Tabellen (User, RefreshToken)
-│   │   ├── schemas/          # Pydantic-Ein-/Ausgabe-Schemas
-│   │   ├── services/         # Geschäftslogik (auth_service)
-│   │   └── api/v1/           # HTTP-Endpunkte (auth, users)
-│   └── tests/                # pytest + httpx
+│   │   ├── main.py           # App factory, lifespan (DB ping, admin seed), CORS
+│   │   ├── worker.py         # Standalone worker: Redis queue → LangGraph, heartbeats
+│   │   ├── core/             # config, db, security, deps, redis, seed
+│   │   ├── models/           # SQLModel tables: user, refresh_token,
+│   │   │                     #   research_project, document, conversation
+│   │   ├── schemas/          # Pydantic request/response schemas
+│   │   ├── services/         # Business logic: auth, research, document, conversation
+│   │   ├── api/v1/           # HTTP endpoints (thin, delegate to services)
+│   │   └── agent/            # LangGraph deep-research system
+│   │       ├── graph.py      #   Multi-agent graph: supervisor → researchers
+│   │       │                 #   → synthesizer → critic loop
+│   │       ├── deep_report.py#   30+ page pipeline: outline approval
+│   │       │                 #   → per-chapter research → chapter writers
+│   │       ├── nodes/        #   supervisor, researcher, synthesizer, critic
+│   │       ├── tools.py      #   Web search: Tavily (if key) / DuckDuckGo (default)
+│   │       ├── llm.py        #   LLM provider switch: DeepSeek ↔ Z.ai GLM
+│   │       └── …             #   citations, persistence, usage, events, language
+│   └── tests/                # pytest + httpx (SQLite in-memory), 82 tests
 │
 └── frontend/
-    ├── Dockerfile            # Vite-Build + nginx für Produktion
-    ├── package.json
-    ├── vite.config.ts        # Dev-Proxy /api -> Backend
+    ├── Dockerfile            # Vite build → nginx (proxies /api to the backend)
+    ├── vite.config.ts        # Dev proxy: /api → http://localhost:8000
     └── src/
-        ├── lib/api.ts        # fetch-Wrapper mit JWT + Auto-Refresh
-        ├── lib/auth.tsx      # React-Context für Login-State
-        ├── components/ui/    # shadcn/ui-Komponenten
-        └── routes/           # Login, Register, Dashboard, Admin
+        ├── lib/              # api.ts (JWT + auto-refresh), auth.tsx (context),
+        │                     #   sse.ts, citations.ts, research.ts
+        ├── components/       # ResearchPanel (live SSE UI), GraphView (agent
+        │                     #   graph), ConfirmModal, shadcn-style ui/
+        └── routes/           # landing, login, register, dashboard, research,
+                              #   research detail, history, admin, 404
 ```
 
 ---
 
-## Authentifizierung & Autorisierung — wie es funktioniert
+## Quick start (local development)
 
-### Der Login-Flow (Schritt für Schritt)
-
-1. **User gibt E-Mail + Passwort ein** → React schickt `POST /api/v1/auth/login`.
-2. **Backend sucht den User in der DB**, prüft das Passwort mit `pwdlib.verify`.
-3. **Bei Erfolg** erzeugt das Backend ZWEI Token:
-   - **Access-Token** (kurz, z. B. 15 Min) — für jeden API-Aufruf.
-   - **Refresh-Token** (lang, z. B. 7 Tage) — um neue Access-Tokens zu holen,
-     ohne sich neu einzuloggen.
-4. Der Refresh-Token wird **in der DB gespeichert (gehasht!)** — so kann man
-   ihn bei Logout oder Diebstahl-Verdacht widerrufen.
-
-### Jeder geschützte Request
-
-```
-Browser:  GET /api/v1/users/me
-          Authorization: Bearer <access-token>
-
-Backend:  Dependency `get_current_user` läuft:
-            1. Token aus Header holen
-            2. JWT-Signatur prüfen (PyJWT.decode)
-            3. User aus DB laden
-            4. prüfen: ist der User aktiv?
-          -> Nur wenn alles OK, kommt der Request im Endpunkt an.
-```
-
-### Autorisierung (Rollen)
-
-Neben „wer bist du?" (Authentifizierung) gibt es „darfst du das?" (Autorisierung).
-Über die Dependency `require_admin` kann ein Endpunkt nur von Admins aufgerufen
-werden. Beispiel in `backend/app/api/v1/users.py`:
-
-```python
-@router.get("", dependencies=[Depends(require_admin)])
-async def list_users(...): ...
-```
-
-Schickt ein normaler User den Request, bekommt er **403 Forbidden** — bevor der
-Endpunkt-Code überhaupt läuft.
-
-### Refresh-Token-Rotation
-
-Wenn der Access-Token abläuft, schickt das Frontend den Refresh-Token an
-`POST /api/v1/auth/refresh`. Das Backend:
-1. Prüft den Refresh-Token (Signatur + DB-Lookup).
-2. Stellt ein **neues Token-Paar** aus.
-3. Macht den **alten Refresh-Token ungültig** (revoked=True in der DB).
-
-Würde jemand den alten Refresh-Token stehlen, fällt das sofort auf, weil dieser
-bei der nächsten Nutzung schon revoked ist.
-
----
-
-## Häufige Befehle
+Prerequisites: Docker (for Postgres + Redis), [uv](https://docs.astral.sh/uv/)
+(Python ≥ 3.12), Node.js/npm.
 
 ```bash
-# --- Docker ---
-docker compose up --build          # alles starten
-docker compose down                # stoppen (Daten bleiben)
-docker compose down -v             # stoppen + DB-Daten löschen!
+# 1) Environment
+cp .env.example .env
+# Generate a real secret and put it in .env as SECRET_KEY:
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+# For local (non-Docker) backend, also set in .env:
+#   POSTGRES_HOST=localhost
+#   REDIS_URL=redis://localhost:6379/0
+# Research runs need an LLM key: DEEPSEEK_API_KEY (or LLM_PROVIDER=glm + GLM_API_KEY)
 
-# --- Backend (im Container) ---
-docker compose exec backend python -m alembic upgrade head      # Migrations
-docker compose exec backend python -m alembic revision --autogenerate -m "msg"
-docker compose exec backend pytest                              # Tests
-docker compose exec backend ruff check .                        # Lint
-docker compose exec backend ruff format .                       # Format
-
-# --- Frontend (im Container) ---
-docker compose exec frontend npm run build                      # Produktions-Build
-docker compose exec frontend npx shadcn@latest add button       # shadcn-Komponente
-```
-
----
-
-## Lernpfad — in welcher Reihenfolge lese ich was?
-
-Wenn du das Template zum Lernen nutzen willst, empfehle ich diese Reihenfolge.
-Jede Datei hat ausführliche Header-Kommentare, die Konzepte erklären.
-
-### Backend (Kernkonzepte)
-
-1. **`backend/app/core/config.py`** — Wie lädt man Konfiguration aus `.env`?
-   Warum hardcodieren schlecht ist. `pydantic-settings`.
-2. **`backend/app/models/base.py`** + **`user.py`** + **`refresh_token.py`** —
-   SQLModel: wie Pydantic + SQLAlchemy in einem Modell zusammenkommen.
-3. **`backend/app/core/security.py`** — Passwort-Hashing (pwdlib/Argon2) und
-   JWT (Aufbau, Signatur, HS256 vs. RS256). **Wichtig: erst verstehen, dann weiter.**
-4. **`backend/app/core/db.py`** — Async-Engine + `get_session`-Dependency.
-   Warum `yield`-Dependencies + Typ-Alias.
-5. **`backend/app/core/deps.py`** — **Der Dreh- und Angelpunkt.** Authentifizierung
-   (`get_current_user`) vs. Autorisierung (`get_current_admin_user`). Schritt für Schritt kommentiert.
-6. **`backend/app/services/auth_service.py`** — Geschäftslogik: Registrieren,
-   Login, Refresh mit Rotation, Logout. Warum Services trennen?
-7. **`backend/app/api/v1/auth.py`** — So sieht ein Endpunkt aus: dünn, delegiert an den Service.
-8. **`backend/alembic/env.py`** + **`versions/0001_initial.py`** — Was ist eine Migration?
-   Wie hängt Alembic an den Models?
-
-### Frontend (JWT aus Sicht der SPA)
-
-9. **`frontend/src/lib/api.ts`** — WICHTIG: Wo speichert man JWTs
-   (localStorage vs. httpOnly-Cookie)? Wie funktioniert automatischer Refresh bei 401?
-10. **`frontend/src/lib/auth.tsx`** — Wie reicht man den Login-State durch die App (React Context)?
-11. **`frontend/src/App.tsx`** — Geschützte Routen (`RequireAuth`, `RequireAdmin`).
-12. **`frontend/src/routes/*.tsx`** — Login-, Register-, Dashboard-, Admin-Seite.
-
-### Infrastructure
-
-13. **`docker-compose.yml`** — Wie orchestriert man DB + Backend + Frontend?
-14. **`backend/Dockerfile`** — Multi-Stage-Builds, Layer-Caching.
-15. **`.env.example`** — Welche Variablen gibt es und warum?
-
----
-
-## Entwicklung ohne Docker (lokal)
-
-Wenn du das Backend ohne Docker laufen lassen willst (z. B. fürs Debuggen in der IDE):
-
-```bash
-# Terminal 1: Postgres (z. B. via Docker, nur die DB)
-docker run -d --name awesome_db -p 5432:5432 \
+# 2) Infrastructure: Postgres + Redis
+docker run -d --name fuchser-db -p 5432:5432 \
   -e POSTGRES_USER=app_user -e POSTGRES_PASSWORD=change_me \
   -e POSTGRES_DB=app_db postgres:17-alpine
+docker run -d --name fuchser-redis -p 6379:6379 redis:7-alpine
 
-# Terminal 2: Backend
+# 3) Backend
 cd backend
-cp ../.env.example ../.env
-# In .env: POSTGRES_HOST=localhost setzen
 uv sync
 uv run python -m alembic upgrade head
-uv run uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload        # http://localhost:8000/docs
 
-# Terminal 3: Frontend
-cd frontend
+# 4) Worker (separate terminal — required for research runs)
+uv run python -m app.worker
+
+# 5) Frontend (separate terminal)
+cd ../frontend
 npm install
-npm run dev
+npm run dev                                 # http://localhost:5173
 ```
+
+The first admin account is seeded automatically on startup from
+`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
+
+Web search works out of the box via DuckDuckGo (no key needed); set
+`TAVILY_API_KEY` for higher-quality Tavily results.
 
 ---
 
-## Tests ausführen
+## Production deployment
+
+`docker-compose.yml` is a **production stack for Coolify** — not a dev setup.
+It starts five services:
+
+| Service  | Purpose                                                        |
+| -------- | -------------------------------------------------------------- |
+| `db`     | PostgreSQL 17 (volume `fuchser_pgdata`)                        |
+| `redis`  | Redis 7 with AOF persistence (queue + PubSub, volume)          |
+| `backend`| FastAPI; runs `alembic upgrade head`, then uvicorn (no reload) |
+| `worker` | Same image as backend; runs `python -m app.worker`             |
+| `frontend` | nginx serving the Vite build, reverse-proxying `/api`        |
+
+All ports are internal (`expose`, no host port mappings) — Coolify's reverse
+proxy maps the domains. Swagger/ReDoc docs are disabled when `ENVIRONMENT=prod`.
+Default CORS origin is `https://fuchser.sergejgorochow.de` (override via
+`CORS_ORIGINS`). Migrations run automatically on backend start.
+
+---
+
+## Configuration
+
+All values live in `.env` (see `.env.example` for the annotated template).
+
+**General / database / auth**
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `ENVIRONMENT` | `dev` | `dev` / `prod` / `test` (prod disables docs, strict CORS) |
+| `POSTGRES_USER` / `_PASSWORD` / `_DB` | `app_user` / … / `app_db` | Database credentials |
+| `POSTGRES_HOST` / `_PORT` | `db` / `5432` | `db` inside compose, `localhost` for local dev |
+| `SECRET_KEY` | — | JWT signing key; a strong random value is required in prod |
+| `JWT_ALGORITHM` | `HS256` | HMAC with symmetric key (see `core/security.py` for RS256 notes) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Access-token lifetime (short = safer) |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh-token lifetime |
+| `CORS_ORIGINS` | `http://localhost:5173,…` | Comma-separated allowed origins |
+| `SEED_ADMIN_EMAIL` / `_PASSWORD` | — | First admin account, seeded at startup |
+| `REDIS_URL` | `redis://redis:6379/0` | Queue + PubSub for background runs |
+
+**Agent / LLM**
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `LLM_PROVIDER` | `deepseek` | `deepseek` or `glm` |
+| `DEEPSEEK_API_KEY` | — | DeepSeek API key (platform.deepseek.com) |
+| `DEEPSEEK_MODEL` | `deepseek-chat` | DeepSeek V3 with tool calling |
+| `GLM_API_KEY` | — | Z.ai GLM Coding Plan key (api.z.ai, not bigmodel.cn) |
+| `GLM_MODEL` | `glm-5.3` | Or `glm-5.3-flash` (faster/cheaper) |
+| `GLM_BASE_URL` | `https://api.z.ai/api/coding/paas/v4` | Coding-Plan endpoint |
+| `TAVILY_API_KEY` | — | Enables Tavily search; DuckDuckGo is the keyless default |
+
+---
+
+## API overview
+
+All endpoints are prefixed with `/api/v1`.
+
+| Area | Endpoints |
+| ---- | --------- |
+| Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/login/oauth` (form for Swagger), `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me` |
+| Users (admin) | `GET /users`, `GET /users/{id}` |
+| Research | `POST /research`, `GET /research`, `GET /research/{id}`, `PATCH /research/{id}`, `DELETE /research/{id}`, `GET /research/admin/all` (admin), `GET /research/{id}/pdf` |
+| Research runs | `POST /research/{id}/run` (SSE), `POST /research/{id}/resume` (SSE, continue after outline approval) |
+| Documents | `POST /research/{id}/documents` (upload), `GET /research/{id}/documents`, `DELETE /research/{id}/documents/{doc_id}` |
+| Conversations | `GET /conversations`, `GET /conversations/{id}`, `PATCH /conversations/{id}`, `DELETE /conversations/{id}` |
+
+---
+
+## Tests, linting, formatting
+
+The test suite (82 tests) runs against SQLite in-memory — **no Postgres/Redis
+needed**. It covers auth (register, login, refresh rotation, roles), the agent
+graph, deep-report pipeline, LLM handling, document upload, and language
+processing.
 
 ```bash
-# Backend-Tests (verwenden SQLite in-memory, brauchen KEINE Postgres)
-cd backend
-uv run pytest              # alle
-uv run pytest -v           # detailliert
-uv run pytest -k refresh   # nur Tests mit "refresh" im Namen
+# Backend (from backend/)
+uv run pytest              # all tests
+uv run pytest -v           # verbose
+uv run pytest -k refresh   # only tests matching "refresh"
+uv run ruff check .        # lint
+uv run ruff format .       # format
+
+# Frontend (from frontend/)
+npm run build              # type-check (tsc) + production build
 ```
 
-Die Tests decken ab: Registrierung, Login, /me, Duplicate-Email, falsches Passwort,
-Refresh mit Rotation, Autorisierung (User -> 403, Admin -> 200).
+> Note: run these locally. The production backend image installs dependencies
+> with `--no-dev` (no pytest/ruff), and the frontend container is nginx (no node).
 
 ---
 
-## Erweiterungen (bewusst weggelassen)
+## License
 
-Dieses Template ist absichtlich lernbar gehalten. Für echtes Produktions-Setup
-solltest du ergänzen:
-
-- **Passwort-Reset + E-Mail-Verifizierung** (Token-Endpunkt + Mailversand).
-- **OAuth2 Social Login** (Google/GitHub via `authlib`).
-- **Fine-grained Permissions** (Tabelle `user_permissions` statt nur Rollen).
-- **Rate-Limiting** (`slowapi`).
-- **Strukturiertes Logging** (`structlog`).
-- **httpOnly-Cookie statt localStorage** für Tokens (XSS-sicherer).
-
----
-
-## Lizenz
-
-MIT — lern, kopier, bau drauf auf. 🚀
+MIT — learn from it, copy it, build on it. 🚀

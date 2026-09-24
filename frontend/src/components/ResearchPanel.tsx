@@ -1,13 +1,13 @@
 // ============================================================================
-// ResearchPanel.tsx — Das rechte Sidepanel für EINE Recherche (Stufe 5+).
+// ResearchPanel.tsx — the right-hand side panel for ONE research run (level 5+).
 // ============================================================================
-// Ersetzt die alte Detail-Seite: Alles lebt im Chat; dieses Panel zeigt
-// Kontext zur ausgewählten Recherche:
-//   * Kopf: Status, Datum, Thread, Token-Bilanz
-//   * PDF-Download
-//   * "Ergänzung suchen": Follow-up-Frage im selben Thread (Memory!)
-//   * Alle Quellen (vollständig, klickbar)
-//   * AUSFÜHRUNGS-HISTORIE: Timeline der Agenten-Events (aus project.trace)
+// Replaces the old detail page: everything lives in the chat; this panel
+// shows context for the selected research run:
+//   * Header: status, date, thread, token balance
+//   * PDF download
+//   * "Search for additions": follow-up question in the same thread (memory!)
+//   * All sources (complete, clickable)
+//   * EXECUTION HISTORY: timeline of the agent events (from project.trace)
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -36,7 +36,7 @@ import {
   type ResearchProject,
 } from "@/lib/research";
 
-// --- Trace-Timeline: Icon + Label je Event-Typ -------------------------------
+// --- Trace timeline: icon + label per event type -------------------------------
 const NODE_META: Record<string, { icon: typeof Brain; label: string; color: string }> = {
   supervisor: { icon: Brain, label: "Supervisor", color: "text-primary" },
   researcher: { icon: Globe, label: "Researcher", color: "text-secondary" },
@@ -94,7 +94,7 @@ function TraceLine({ entry }: { entry: TraceEntry }) {
   );
 }
 
-// --- Das Panel ----------------------------------------------------------------
+// --- The panel ----------------------------------------------------------------
 export function ResearchPanel({
   projectId,
   chainIds,
@@ -102,10 +102,10 @@ export function ResearchPanel({
   onSelectProject,
 }: {
   projectId: string;
-  /** Alle Projekte der Unterhaltung (Kette) — für die gemeinsame Historie & Umschaltung. */
+  /** All projects of the conversation (chain) — for the shared history & switching. */
   chainIds?: string[];
   onClose: () => void;
-  /** Umschalten des aktiven Projekts (synchronisiert mit Chat-Scroll). */
+  /** Switching the active project (synchronized with chat scrolling). */
   onSelectProject?: (projectId: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState(projectId);
@@ -113,12 +113,12 @@ export function ResearchPanel({
   const [error, setError] = useState<string | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
-  // Dokumente der Unterhaltung (Upload/Löschen direkt im Panel)
+  // Documents of the conversation (upload/delete directly in the panel)
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [docBusy, setDocBusy] = useState(false);
   const docInputRef = useRef<HTMLInputElement>(null);
 
-  // Synchronisation wenn von außen (z. B. durch Chat-Scroll) ein neues projectId kommt
+  // Synchronization when a new projectId arrives from outside (e.g. via chat scrolling)
   useEffect(() => {
     setSelectedId(projectId);
   }, [projectId]);
@@ -163,7 +163,7 @@ export function ResearchPanel({
     }
   };
 
-  // Kette: alle Projekte der Unterhaltung (älteste zuerst)
+  // Chain: all projects of the conversation (oldest first)
   const [chainProjects, setChainProjects] = useState<ResearchProject[]>([]);
   const effectiveChain = chainIds && chainIds.length > 0 ? chainIds : [selectedId];
 
@@ -197,7 +197,7 @@ export function ResearchPanel({
 
   return (
     <aside className="pointer-events-auto flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-2xl">
-      {/* Kopf */}
+      {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3 bg-muted/20">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <FileText className="h-4 w-4 text-primary" /> Recherche-Details
@@ -207,7 +207,7 @@ export function ResearchPanel({
         </button>
       </div>
 
-      {/* Umschalter für Nachfragen / Verlaufs-Kette (wenn mehr als 1 Prompt in der Unterhaltung) */}
+      {/* Switcher for follow-up questions / history chain (if more than 1 prompt in the conversation) */}
       {chainProjects.length > 1 && (
         <div className="border-b bg-muted/10 px-3 py-2">
           <div className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -250,7 +250,7 @@ export function ResearchPanel({
         )}
         {project && (
           <>
-            {/* Frage-Titel & Turn Badge */}
+            {/* Question title & turn badge */}
             <div className="mb-3 rounded-xl border border-primary/20 bg-primary/5 p-2.5">
               <div className="flex items-center justify-between gap-1 text-[11px] text-muted-foreground mb-1">
                 <span className="font-semibold uppercase tracking-wider text-primary">
@@ -286,7 +286,7 @@ export function ResearchPanel({
               <span>{new Date(project.created_at).toLocaleDateString("de-DE")}</span>
             </div>
 
-            {/* PDF Download Button für die aktuell ausgewählte Frage */}
+            {/* PDF download button for the currently selected question */}
             <button
               onClick={() => downloadResearchPdf(project.id).catch(console.error)}
               disabled={!project.report}
@@ -298,7 +298,7 @@ export function ResearchPanel({
                 : "Report als PDF herunterladen"}
             </button>
 
-            {/* Dokumente der Unterhaltung (Upload + Verwaltung) */}
+            {/* Documents of the conversation (upload + management) */}
             <div className="mt-3 rounded-lg border border-border/70 p-2.5">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
@@ -356,7 +356,7 @@ export function ResearchPanel({
             </div>
 
 
-            {/* Quellen dieser Frage (aus-/einklappbar) */}
+            {/* Sources for this question (collapsible) */}
             {project.sources && project.sources.length > 0 && (
               <div className="mt-4 rounded-xl border border-border/60 bg-muted/20 p-2.5">
                 <button
@@ -393,7 +393,7 @@ export function ResearchPanel({
               </div>
             )}
 
-            {/* Ausführungs-Historie: Timeline der Agenten-Events */}
+            {/* Execution history: timeline of agent events */}
             {chainProjects.some((p) => (p.trace ?? []).length > 0) && (
               <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 p-2.5">
                 <button

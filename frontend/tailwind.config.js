@@ -1,14 +1,14 @@
-// tailwind.config.js — Konfiguration für Tailwind CSS.
+// tailwind.config.js — Configuration for Tailwind CSS.
 // ============================================================================
-// THEME "Neon Bloom" (übersetzt aus einem shadcn/Tailwind-v4-Theme):
-// Die Farbwerte liegen als RGB-KANÄLE in index.css (z. B. "219 39 119") und
-// werden hier über rgb(var(--x) / <alpha-value>) gemappt — das alpha-Stück
-// ermöglicht Opacity-Utilities wie bg-primary/50. Dunkelmodus via .dark-Klasse.
+// THEME "Neon Bloom" (translated from a shadcn/Tailwind-v4 theme):
+// The color values live as RGB CHANNELS in index.css (e.g. "219 39 119") and
+// are mapped here via rgb(var(--x) / <alpha-value>) — the alpha piece
+// enables opacity utilities like bg-primary/50. Dark mode via the .dark class.
 // ============================================================================
 
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: ["class"], // Dark-Mode aktivierbar via <html class="dark">
+  darkMode: ["class"], // dark mode can be enabled via <html class="dark">
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     container: {
@@ -51,13 +51,13 @@ export default {
           DEFAULT: "rgb(var(--popover) / <alpha-value>)",
           foreground: "rgb(var(--popover-foreground) / <alpha-value>)",
         },
-        // Chart-Farben (nutzbare Utility: bg-chart-1, text-chart-4, …)
+        // Chart colors (usable utilities: bg-chart-1, text-chart-4, …)
         "chart-1": "rgb(var(--chart-1) / <alpha-value>)",
         "chart-2": "rgb(var(--chart-2) / <alpha-value>)",
         "chart-3": "rgb(var(--chart-3) / <alpha-value>)",
         "chart-4": "rgb(var(--chart-4) / <alpha-value>)",
         "chart-5": "rgb(var(--chart-5) / <alpha-value>)",
-        // Sidebar-Set (für spätere Layouts mit Sidebar-Navigation)
+        // Sidebar set (for later layouts with sidebar navigation)
         sidebar: {
           DEFAULT: "rgb(var(--sidebar) / <alpha-value>)",
           foreground: "rgb(var(--sidebar-foreground) / <alpha-value>)",
@@ -80,7 +80,7 @@ export default {
         serif: ["Georgia", "serif"],
         mono: ["Fira Code", "monospace"],
       },
-      // Neon-Schatten aus dem Theme (Light: Pink-Glow, Dark: Magenta-Neon)
+      // Neon shadows from the theme (light: pink glow, dark: magenta neon)
       boxShadow: {
         "2xs": "var(--shadow-2xs)",
         sm: "var(--shadow-sm)",

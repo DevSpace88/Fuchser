@@ -4,9 +4,9 @@ Revision ID: j0o1p2q3r4s5
 Revises: i9n0o1p2q3r4
 Create Date: 2026-08-30
 
-Persistiert die fertig geschriebenen Deep-Report-Kapitel inkrementell,
-damit ein abgebrochener Lauf (Rate-Limit / leere LLM-Antwort) die bereits
-geschriebenen Kapitel nicht verliert und ein Resume sie überspringen kann.
+Persists the finished deep-report chapters incrementally, so that an
+aborted run (rate limit / empty LLM response) does not lose the already
+written chapters and a resume can skip them.
 """
 
 from typing import Sequence, Union

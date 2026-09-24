@@ -1,25 +1,25 @@
 """
-models/base.py — Gemeinsame Basis für alle Tabellen-Modelle
-===========================================================
+models/base.py — shared base for all table models
+=================================================
 
-Hier definieren wir ein `TimestampMixin`, das JEDE Tabelle automatisch um
-zwei Spalten ergänzt:
-  - created_at: wann wurde der Datensatz angelegt?
-  - updated_at: wann wurde er zuletzt geändert?
+Here we define a `TimestampMixin` that automatically augments EVERY table with
+two columns:
+  - created_at: when was the record created?
+  - updated_at: when was it last modified?
 
-So muss nicht jedes Model diese Felder wiederholen — DRY (Don't Repeat Yourself).
+That way no model has to repeat these fields — DRY (Don't Repeat Yourself).
 
-Konzept SQLModel
+SQLModel concept
 ----------------
-SQLModel (von FastAPI-Autor Sebastián Ramirez) verschmilzt ZWEI Welten:
-  * Pydantic  -> Datenvalidierung + Serialisierung (für die API)
-  * SQLAlchemy -> ORM (für die Datenbank)
+SQLModel (by FastAPI author Sebastián Ramirez) merges TWO worlds:
+  * Pydantic  -> data validation + serialization (for the API)
+  * SQLAlchemy -> ORM (for the database)
 
-Ein einziges `class User(SQLModel, table=True)` ersetzt also das sonst
-getrennte ORM-Modell (SQLAlchemy) und das Schema (Pydantic).
+A single `class User(SQLModel, table=True)` thus replaces the otherwise
+separate ORM model (SQLAlchemy) and schema (Pydantic).
 
-`table=True` aktiviert den ORM-Modus. Ohne `table=True` ist es ein reines
-Pydantic-Modell (nützlich für Response/Input-Schemas, siehe schemas/).
+`table=True` activates ORM mode. Without `table=True` it is a pure Pydantic
+model (useful for response/input schemas, see schemas/).
 """
 
 from datetime import UTC, datetime
@@ -30,25 +30,24 @@ from sqlmodel import Field, SQLModel
 
 class TimestampMixin(SQLModel):
     """
-    Mixin, das created_at / updated_at hinzufügt.
+    Mixin that adds created_at / updated_at.
 
-    Ein "Mixin" ist eine Klasse, die man als Basis anderen Klassen mitgibt,
-    um gemeinsam genutzte Felder/Methoden an einer Stelle zu haben.
+    A "mixin" is a class you hand to other classes as a base, so that shared
+    fields/methods live in one place.
 
-    WICHTIG: Diese Klasse hat NICHT `table=True`. Sie ist eine "Basis", die
-    von echten Tabellen-Modellen beerbt wird. Mixin-Modelle ohne table=True
-    werden NICHT als eigene Tabelle angelegt — nur die Felder werden
-    weitervererbt.
+    IMPORTANT: This class does NOT have `table=True`. It is a "base" that real
+    table models inherit from. Mixin models without table=True are NOT created
+    as their own table — only the fields are passed on.
     """
 
-    # sa_column_kwargs + sa_type statt sa_column=Column(...):
+    # sa_column_kwargs + sa_type instead of sa_column=Column(...):
     #
-    # ACHTUNG FALLSTRICK: Ein `sa_column=Column(...)` im Mixin erzeugt EINE
-    # konkrete Column-Instanz, die an EINE Tabelle gebunden wird. Sobald ein
-    # ZWEITES Modell das Mixin erbt, crasht SQLAlchemy ("Column already
-    # assigned"). sa_column_kwargs/sa_type sind dagegen nur KONFIGURATION —
-    # SQLModel baut daraus pro Modell eine frische Column. Gleiches DDL,
-    # aber mixin-tauglich.
+    # GOTCHA: An `sa_column=Column(...)` in the mixin creates ONE concrete
+    # Column instance that is bound to ONE table. As soon as a SECOND model
+    # inherits the mixin, SQLAlchemy crashes ("Column already assigned").
+    # sa_column_kwargs/sa_type, by contrast, are pure CONFIGURATION —
+    # SQLModel builds a fresh Column from them per model. Same DDL,
+    # but mixin-safe.
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_type=DateTime(timezone=True),

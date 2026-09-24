@@ -1,27 +1,27 @@
-"""fix_role_enum: korrigiert die role-Spalte (war String, wird Postgres-Enum)
+"""fix_role_enum: fixes the role column (was String, becomes a Postgres enum)
 
 Revision ID: 0002_fix_role_enum
 Revises: 0001_initial
 Create Date: 2026-08-06
 
-WAS PASSIERT HIER (Lern-Hintergrund)?
--------------------------------------
-In der ersten Migration (0001_initial) hatte ich die `role`-Spalte als
-sa.String() angelegt. SQLModel/SQLAlchemy leitet für das Enum-Feld im Modell
-(`role: UserRole`) aber einen Postgres-Enum-Typ namens "userrole" ab.
+WHAT IS GOING ON HERE (learning background)?
+--------------------------------------------
+In the first migration (0001_initial) I created the `role` column as
+sa.String(). But SQLModel/SQLAlchemy derives a Postgres enum type named
+"userrole" for the enum field in the model (`role: UserRole`).
 
-Modell sagt:  role ist vom Postgres-Typ userrole
-DB sagt:       role ist VARCHAR(20)
+Model says:   role is of Postgres type userrole
+DB says:      role is VARCHAR(20)
 
-Diese Diskrepanz führt beim Einfügen zu:
+This discrepancy leads to the following error on insert:
    "type 'userrole' does not exist"
 
-Diese Migration korrigiert das NACHTRÄGLICH:
-  1. Legt den Postgres-Enum-Typ userrole mit den Werten 'user','admin' an.
-  2. Wandelt die Spalte auf diesen Typ um (vorhandene Werte werden übernommen).
+This migration corrects it AFTER THE FACT:
+  1. Creates the Postgres enum type userrole with the values 'user','admin'.
+  2. Converts the column to that type (existing values are carried over).
 
-Lektion: Handgeschriebene Migrationen sind fehleranfällig — autogenerate
-(`alembic revision --autogenerate`) hätte den Enum-Typ korrekt erkannt.
+Lesson: hand-written migrations are error-prone — autogenerate
+(`alembic revision --autogenerate`) would have detected the enum type correctly.
 """
 from typing import Sequence, Union
 
@@ -35,19 +35,20 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 1) Postgres-Enum-Typ anlegen. Mit `create_type=False` könnten wir
-    #    SQLAlchemy davon abhalten, den Typ nochmal anzulegen — hier wollen
-    #    wir ihn aber EXPLIZIT selbst erzeugen, deshalb die pure SQL-Variante.
-    #    Die Werte müssen EXAKT mit den .value-Werten des Python-Enums
-    #    (UserRole.USER = "user", UserRole.ADMIN = "admin") übereinstimmen.
+    # 1) Create the Postgres enum type. With `create_type=False` we could
+    #    stop SQLAlchemy from creating the type again — but here we want
+    #    to create it EXPLICITLY ourselves, hence the pure SQL variant.
+    #    The values must match the .value entries of the Python enum
+    #    (UserRole.USER = "user", UserRole.ADMIN = "admin") EXACTLY.
     user_role_enum = sa.Enum("user", "admin", name="userrole")
     user_role_enum.create(op.get_bind(), checkfirst=True)
 
-    # 2) Default WEGNEHMEN. Sonst schlägt der Typ-Wechsel mit
-    #    "default for column cannot be cast automatically to type userrole" fehl:
-    #    Postgres versucht, den String-Default ('user') auf den Enum-Typ zu
-    #    casten, was beim ALTER nicht automatisch klappt. Erst Default droppen,
-    #    Typ ändern, Default neu setzen (jetzt typisiert als userrole).
+    # 2) REMOVE the default. Otherwise the type switch fails with
+    #    "default for column cannot be cast automatically to type userrole":
+    #    Postgres tries to cast the string default ('user') to the enum type,
+    #    which does not work automatically during the ALTER. First drop the
+    #    default, change the type, then set the default again (now typed as
+    #    userrole).
     op.alter_column(
         "users",
         "role",
@@ -67,7 +68,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Rückweg: wieder VARCHAR, dann Enum-Typ droppen.
+    # Reverse path: back to VARCHAR, then drop the enum type.
     op.alter_column(
         "users",
         "role",

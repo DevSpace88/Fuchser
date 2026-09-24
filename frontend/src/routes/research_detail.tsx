@@ -1,6 +1,6 @@
-// routes/research_detail.tsx — NUR noch ein Redirect (User-Wunsch: alles im
-// Chat + Sidepanel statt separater Detail-Seite). Alte Links/Bookmarks
-// landen automatisch im Chat mit geöffnetem Panel (?focus=…).
+// routes/research_detail.tsx — now ONLY a redirect (user request: everything
+// in the chat + side panel instead of a separate detail page). Old
+// links/bookmarks land in the chat with the panel open (?focus=…).
 import { Navigate, useParams } from "react-router-dom";
 
 export function ResearchDetailPage() {

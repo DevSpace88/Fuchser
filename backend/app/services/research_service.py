@@ -1,28 +1,28 @@
 """
-services/research_service.py — GESCHÄFTSLOGIK für Recherche-Projekte
+services/research_service.py — BUSINESS LOGIC for research projects
 ====================================================================
 
-Zwei Verantwortungen:
-    1) CRUD auf research_projects — IMMER gefiltert nach user_id
-       (Ownership: fremde Projekte sind unsichtbar → ProjectNotFound).
-    2) Den LangGraph-Lauf als SSE-Event-Strom: run_research_stream()
-       kapselt astream() und übersetzt LangGraph-Chunks in unser
-       SSE-Event-Protokoll (siehe PLAN.md §4).
-    3) report_to_pdf(): Report + Quellen als echtes PDF (Download, nicht
-       Browser-Druck) — Markdown → HTML → xhtml2pdf.
+Two responsibilities:
+    1) CRUD on research_projects — ALWAYS filtered by user_id
+       (ownership: other people's projects are invisible → ProjectNotFound).
+    2) The LangGraph run as an SSE event stream: run_research_stream()
+       wraps astream() and translates LangGraph chunks into our
+       SSE event protocol (see PLAN.md §4).
+    3) report_to_pdf(): report + sources as a real PDF (download, not
+       browser printing) — Markdown → HTML → xhtml2pdf.
 
-SSE-Protokoll (Stufe 4):
+SSE protocol (stage 4):
     status             {"status": "running"}
     node               {"node": "supervisor", "status": "start"|"end", …}
-                       Live-Telemetrie für die Graph-Visualisierung (custom-
-                       Stream-Events aus app/agent/events.py)
-    subagents_planned  {"sub_questions": [...]}          Supervisor fertig
-    subagent           {"sub_question": ..., "sources": n}  Researcher fertig
-    token              {"text": "..."}                   Synthesizer live
-    sources            {"sources": [...]}                deduplizierte Quellen
+                       live telemetry for the graph visualization (custom
+                       stream events from app/agent/events.py)
+    subagents_planned  {"sub_questions": [...]}          supervisor finished
+    subagent           {"sub_question": ..., "sources": n}  researcher finished
+    token              {"text": "..."}                   synthesizer live
+    sources            {"sources": [...]}                deduplicated sources
     done / error
 
-Der Service importiert bewusst KEIN FastAPI — er ist ohne HTTP testbar.
+The service deliberately imports NO FastAPI — it is testable without HTTP.
 """
 
 import asyncio
@@ -47,32 +47,32 @@ logger = logging.getLogger(__name__)
 
 
 # ----------------------------------------------------------------------------
-# Fehler-Typen: der Endpunkt übersetzt sie in saubere HTTP-Codes (404/409).
+# Error types: the endpoint translates them into clean HTTP codes (404/409).
 # ----------------------------------------------------------------------------
 class ProjectNotFound(Exception):
-    """Projekt existiert nicht — ODER gehört einem anderen User."""
+    """Project does not exist — OR belongs to another user."""
 
 
 # ============================================================================
-# 1) CRUD (immer ownership-gefiltert)
+# 1) CRUD (always ownership-filtered)
 # ============================================================================
 async def create_project(
     session: AsyncSession, user: User, data: ResearchCreate
 ) -> ResearchProject:
     """
-    Legt ein neues Recherche-Projekt für `user` an (Status: queued).
+    Creates a new research project for `user` (status: queued).
 
-    Stufe 5 — Follow-ups: Ist `followup_of` gesetzt (und gehört dem User),
-    übernimmt das Projekt den THREAD der Ursprungs-Recherche: Der Graph
-    läuft dann im selben Kontext und der Supervisor sieht die bisherigen
-    findings (plant nur neue Aspekte). Fremde parent-IDs → ProjectNotFound.
+    Stage 5 — follow-ups: if `followup_of` is set (and owned by the user),
+    the project takes over the THREAD of the original research: the graph
+    then runs in the same context and the supervisor sees the previous
+    findings (plans only new aspects). Foreign parent IDs → ProjectNotFound.
     """
     parent = None
     if data.followup_of is not None:
-        # wirft ProjectNotFound bei fremden/unbekannten IDs -> 404
+        # raises ProjectNotFound for foreign/unknown IDs -> 404
         parent = await get_project(session, user, data.followup_of)
 
-    # ---- Unterhaltung bestimmen (Google-AI-Studio-Modell) ----
+    # ---- Determine the conversation (Google AI Studio model) ----
     from app.models.conversation import Conversation
     from app.services.conversation_service import create_conversation
 
@@ -82,16 +82,16 @@ async def create_project(
         if conv is None or conv.user_id != user.id:
             raise ProjectNotFound(str(conversation_id))
     elif parent is not None and parent.conversation_id is not None:
-        # Nachfrage -> gehört in die Unterhaltung des Parents
+        # Follow-up question -> belongs in the parent's conversation
         conversation_id = parent.conversation_id
     elif parent is not None:
-        # Alt-Daten: Parent hat noch keine Conversation -> für ihn anlegen
+        # Legacy data: parent has no conversation yet -> create one for it
         conv = await create_conversation(session, user, parent.question[:200])
         parent.conversation_id = conv.id
         session.add(parent)
         conversation_id = conv.id
     else:
-        # Neue eigenständige Frage -> neue Unterhaltung (Titel = Frage)
+        # New standalone question -> new conversation (title = question)
         conv = await create_conversation(session, user, data.question[:200])
         conversation_id = conv.id
 
@@ -113,7 +113,7 @@ async def create_project(
 
 
 async def list_projects(session: AsyncSession, user: User) -> list[ResearchProject]:
-    """Alle Projekte des Users, neueste zuerst."""
+    """All of the user's projects, newest first."""
     result = await session.exec(
         select(ResearchProject)
         .where(ResearchProject.user_id == user.id)
@@ -124,8 +124,8 @@ async def list_projects(session: AsyncSession, user: User) -> list[ResearchProje
 
 async def get_project(session: AsyncSession, user: User, project_id: UUID) -> ResearchProject:
     """
-    Einzelnes Projekt — wirft ProjectNotFound, wenn es das Projekt nicht gibt
-    ODER es einem anderen User gehört (nach außen identisch: 404).
+    Single project — raises ProjectNotFound if the project does not exist
+    OR belongs to another user (indistinguishable from outside: 404).
     """
     project = await session.get(ResearchProject, project_id)
     if project is None or project.user_id != user.id:
@@ -136,7 +136,7 @@ async def get_project(session: AsyncSession, user: User, project_id: UUID) -> Re
 async def rename_project(
     session: AsyncSession, user: User, project_id: UUID, title: str
 ) -> ResearchProject:
-    """Setzt den Anzeigename (PDF-Titel, Listen). Die Frage bleibt gleich."""
+    """Sets the display name (PDF title, lists). The question stays the same."""
     project = await get_project(session, user, project_id)
     project.title = title.strip()
     session.add(project)
@@ -146,30 +146,30 @@ async def rename_project(
 
 
 async def delete_project(session: AsyncSession, user: User, project_id: UUID) -> None:
-    """Löscht ein Projekt (Checkpoints bleiben zunächst bestehen — aufräumen kommt in Stufe 5)."""
+    """Deletes a project (checkpoints remain for now — cleanup comes in stage 5)."""
     project = await get_project(session, user, project_id)
     await session.delete(project)
     await session.commit()
 
 
 # ============================================================================
-# 2) DER GRAPH-LAUF ALS SSE-STROM (Stufe 3: Multi-Agent)
+# 2) THE GRAPH RUN AS AN SSE STREAM (stage 3: multi-agent)
 # ============================================================================
 def _sse(event: str, data: dict) -> str:
-    """Formatiert ein Event als Server-Sent-Events-Frame (`event: X\ndata: {...}\n\n`)."""
+    """Formats an event as a Server-Sent-Events frame (`event: X\ndata: {...}\n\n`)."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 def _dedupe_sources(sources: list[dict]) -> list[dict]:
-    """Quellen normieren — GLEICHE Logik wie im Synthesizer (tools.
-    normalize_sources), damit [n]-Zitate im Report mit der UI-Liste
-    übereinstimmen (gleiche Reihenfolge, gleicher Cap)."""
+    """Normalize sources — the SAME logic as in the synthesizer (tools.
+    normalize_sources), so that [n] citations in the report match the UI
+    list (same order, same cap)."""
     from app.agent.tools import normalize_sources
 
     return normalize_sources(sources)
 
 
-# Phase je Node für die Status-Anzeige (Stufe 4: phasensynchron).
+# Phase per node for the status display (stage 4: phase-synchronized).
 _NODE_PHASE = {
     "supervisor": "planning",
     "researcher": "researching",
@@ -179,13 +179,13 @@ _NODE_PHASE = {
 
 
 def _redis_run_action(status: str, marker_exists: bool) -> str:
-    """Reconnect-Entscheidung für den Redis-Pfad: 'subscribe' oder 'push'.
+    """Reconnect decision for the Redis path: 'subscribe' or 'push'.
 
-    'subscribe': Task ist bereits aktiv (Queue ODER Worker — per Run-Marker
-                 belegt). Nur zuhören, NIEMALS ein zweites Mal einreihen.
-    'push':      Kein aktiver Task -> einreihen. Deckt auch den Fall ab, in
-                 dem der Status 'running' ist, der Worker aber gestorben ist
-                 (Marker verfallen) -> Neu-Anstoß mit günstigem Resume.
+    'subscribe': Task is already active (queue OR worker — evidenced by
+                 the run marker). Only listen, NEVER enqueue a second time.
+    'push':      No active task -> enqueue. Also covers the case where the
+                 status is 'running' but the worker has died (marker
+                 expired) -> re-trigger with a cheap resume.
     """
     if marker_exists and status in (
         ResearchStatus.RUNNING.value,
@@ -200,15 +200,15 @@ async def run_research_stream(
     project: ResearchProject,
 ) -> AsyncIterator[str]:
     """
-    REDIS-ARCHITEKTUR: Der Graph läuft im WORKER (eigener Prozess),
-    NICHT hier im SSE-Request. Browser-Reloads töten den Agenten nicht mehr.
+    REDIS ARCHITECTURE: the graph runs in the WORKER (separate process),
+    NOT here in the SSE request. Browser reloads no longer kill the agent.
 
-    1. Task in Redis-Queue pushen (Worker nimmt ihn entgegen)
-    2. SSE-Stream monitored Redis PubSub für Fortschritts-Events
-    3. Wenn SSE disconnectet: Worker läuft WEITER
+    1. Push the task onto the Redis queue (the worker picks it up)
+    2. The SSE stream monitors Redis PubSub for progress events
+    3. If the SSE disconnects: the worker KEEPS RUNNING
     """
-    # Redis verfügbar? → Worker-Architektur (reload-sicher)
-    # Redis nicht verfügbar? → Inline-Fallback (Tests, lokale Entwicklung)
+    # Redis available? → worker architecture (reload-safe)
+    # Redis unavailable? → inline fallback (tests, local development)
     redis_available = False
     try:
         from app.core.redis import get_redis
@@ -226,15 +226,15 @@ async def run_research_stream(
         marker = await has_run_marker(pid)
 
         if _redis_run_action(project.status, marker) == "subscribe":
-            # RECONNECT (z. B. Seiten-Reload): Der Task läuft bereits in
-            # Queue/Worker — NUR abonnieren, keinen zweiten Task pushen.
-            # (Vorher wurde hier blind gepusht => der komplette Lauf lief
-            # nach dem Reload EIN ZWEITES MAL mit vollen Token-Kosten!)
+            # RECONNECT (e.g. page reload): the task is already running in
+            # queue/worker — ONLY subscribe, do not push a second task.
+            # (Previously this blindly pushed => after the reload the whole
+            # run executed A SECOND TIME at full token cost!)
             logger.info("Reconnect an laufenden Task %s — kein neuer Queue-Eintrag", pid)
         else:
             if project.status == ResearchStatus.RUNNING.value:
-                # Status "running", aber kein aktiver Worker (Prozess gestorben):
-                # Teilerfolg (chapters) bleibt erhalten -> günstiges Resume.
+                # Status "running", but no active worker (process died):
+                # partial progress (chapters) is preserved -> cheap resume.
                 logger.warning("Verwaister Lauf %s (Worker nicht mehr aktiv) — neu einreihen", pid)
             project.status = ResearchStatus.RUNNING.value
             session.add(project)
@@ -244,9 +244,9 @@ async def run_research_stream(
 
         yield _sse("status", {"status": "running"})
 
-        # Terminal-Race: Der Lauf kann genau jetzt enden (PubSub-Events, die
-        # VOR unserem Subscribe publiziert wurden, sind verloren). Status
-        # frisch aus der DB holen, bevor wir auf Events warten.
+        # Terminal race: the run may end right now (PubSub events published
+        # BEFORE our subscribe are lost). Fetch the status fresh from the DB
+        # before we wait for events.
         await session.refresh(project)
         if project.status == ResearchStatus.DONE.value:
             yield _sse("done", {"status": "done"})
@@ -257,8 +257,8 @@ async def run_research_stream(
 
         async for event_data in subscribe_progress(pid, idle_timeout=20.0):
             if event_data.get("event") == "__idle__":
-                # 20s nichts gehört: Ist der Lauf noch alive? (Verpasstes
-                # done/error ODER toter Worker — statt ewig blind warten.)
+                # Nothing heard for 20s: is the run still alive? (Missed
+                # done/error OR dead worker — instead of waiting blindly forever.)
                 await session.refresh(project)
                 if project.status == ResearchStatus.DONE.value:
                     yield _sse("done", {"status": "done"})
@@ -267,16 +267,16 @@ async def run_research_stream(
                     yield _sse("error", {"detail": project.error or "Lauf fehlgeschlagen"})
                     return
                 if not await has_run_marker(pid):
-                    # Worker gestorben: Teilerfolg bleibt in der DB -> der
-                    # User kann über "Fortsetzen" ab dem letzten Kapitel
-                    # weitermachen statt von vorne.
+                    # Worker died: partial progress stays in the DB -> the
+                    # user can continue from the last chapter via
+                    # "Fortsetzen" (resume) instead of starting over.
                     project.status = ResearchStatus.ERROR.value
                     project.error = "Worker nicht mehr erreichbar — Lauf unterbrochen"
                     session.add(project)
                     await session.commit()
                     yield _sse("error", {"detail": project.error})
                     return
-                # Keep-Alive: Browser/Proxy vor Inaktivitäts-Timeout (nach ~60s) schützen
+                # Keep-alive: protect browser/proxy from the inactivity timeout (after ~60s)
                 yield _sse("ping", {"status": "running"})
                 continue
             event = event_data.pop("event", "node")
@@ -285,15 +285,15 @@ async def run_research_stream(
                 break
         return
 
-    # --- INLINE-FALLBACK (wie vorher, für Tests / ohne Redis) ---
+    # --- INLINE FALLBACK (as before, for tests / without Redis) ---
     yield _sse("status", {"status": "running"})
 
-    # RESUME-Semantik: Teilkapitel vorhanden, aber kein fertiger Report ->
-    # abgebrochenen Lauf fortsetzen (gleicher Thread!). Der Graph startet mit
-    # Input, aber die Nodes sind IDEMPOTENT: Outline + Recherche überspringen
-    # im Checkpoint-State vorhandenes, der Writer überspringt die gespeicherten
-    # Kapitel => nur fehlende Kapitel kosten Tokens.
-    # Sonst frischer Lauf (neuer Thread für Top-Level-Projekte, Kapitel reset).
+    # RESUME semantics: partial chapters exist, but no finished report ->
+    # continue an aborted run (same thread!). The graph starts with input,
+    # but the nodes are IDEMPOTENT: outline + research skip what is already
+    # in the checkpoint state, the writer skips the stored chapters
+    # => only missing chapters cost tokens.
+    # Otherwise a fresh run (new thread for top-level projects, chapter reset).
     resuming = bool(project.chapters) and not project.report
     if not resuming:
         if project.parent_id is None:
@@ -391,7 +391,7 @@ async def run_research_stream(
                     and payload.get("status") == "done"
                     and payload.get("content")
                 ):
-                    # Kapitel SOFORT persistieren (Crash-sicher bei Abbruch).
+                    # Persist the chapter IMMEDIATELY (crash-safe on abort).
                     chapters = list(project.chapters or [])
                     chapters.append(
                         {"title": payload.get("title", ""), "content": payload["content"]}
@@ -497,17 +497,17 @@ async def run_research_stream(
 
 
 # ============================================================================
-# 3) PDF-EXPORT (User-Wunsch: echter Download, kein Browser-Druckdialog)
+# 3) PDF EXPORT (user request: real download, no browser print dialog)
 # ============================================================================
 # Pipeline: Markdown → HTML (python-markdown) → PDF (xhtml2pdf/pisa).
-# xhtml2pdf ist pure Python (braucht keine System-Libs wie Cairo/Pango)
-# und versteht eine brauchbare CSS-Untermenge — für unsere Reports reicht
-# das locker: Überschriften, Absätze, Listen, klickbare Links.
+# xhtml2pdf is pure Python (needs no system libs like Cairo/Pango)
+# and understands a usable subset of CSS — more than enough for our reports:
+# headings, paragraphs, lists, clickable links.
 
-# Absichtlich schlichtes, druckfreundliches CSS (xhtml2pdf versteht kein
-# Flexbox/Grid — Klassiker wie font/margin/border aber zuverlässig).
-# Absichtlich druckfreundliches, sauberes CSS (xhtml2pdf unterstützt
-# Tabellen-Layouts, @page und @frame exzellent).
+# Deliberately plain, print-friendly CSS (xhtml2pdf understands no
+# Flexbox/Grid — but classics like font/margin/border work reliably).
+# Deliberately print-friendly, clean CSS (xhtml2pdf supports
+# table layouts, @page and @frame excellently).
 _PDF_CSS = """
 @page {
     size: a4 portrait;
@@ -703,7 +703,7 @@ def _escape_html(text: str) -> str:
 
 
 _UNICODE_REPLACEMENTS = {
-    # Hochgestellte Zeichen (Superscript) -> <sup>
+    # Superscript characters -> <sup>
     "⁰": "<sup>0</sup>",
     "¹": "<sup>1</sup>",
     "²": "<sup>2</sup>",
@@ -718,7 +718,7 @@ _UNICODE_REPLACEMENTS = {
     "ᵗ": "<sup>t</sup>",
     "⁺": "<sup>+</sup>",
     "⁻": "<sup>-</sup>",
-    # Tiefgestellte Zeichen (Subscript) -> <sub>
+    # Subscript characters -> <sub>
     "₀": "<sub>0</sub>",
     "₁": "<sub>1</sub>",
     "₂": "<sub>2</sub>",
@@ -735,10 +735,10 @@ _UNICODE_REPLACEMENTS = {
     "ₗ": "<sub>l</sub>",
     "ₘ": "<sub>m</sub>",
     "ₙ": "<sub>n</sub>",
-    # Gedankenstriche
+    # Em dashes
     "—": " &mdash; ",
     "―": " &mdash; ",
-    # Typografische Anführungszeichen
+    # Typographic quotation marks
     "„": "&bdquo;",
     "“": "&ldquo;",
     "”": "&rdquo;",
@@ -747,7 +747,7 @@ _UNICODE_REPLACEMENTS = {
     "‚": "&sbquo;",
     "«": "&laquo;",
     "»": "&raquo;",
-    # Mathematische Operatoren & Symbole
+    # Mathematical operators & symbols
     "•": "&bull;",
     "·": "&middot;",
     "…": "&hellip;",
@@ -769,7 +769,7 @@ _UNICODE_REPLACEMENTS = {
     "⇔": "&hArr;",
     "↑": "&uarr;",
     "↓": "&darr;",
-    # Häkchen & Sonderzeichen
+    # Checkmarks & special characters
     "✓": "&#10003;",
     "✔": "&#10004;",
     "✗": "&#10007;",
@@ -782,9 +782,9 @@ _UNICODE_REPLACEMENTS = {
 
 def _remove_duplicate_headings(text: str) -> str:
     """
-    Entfernt redundante, aufeinanderfolgende Kapitelüberschriften, z. B.
-    '## 3. US-Konzerne und Scale-ups' gefolgt von '## US-Konzerne und Scale-ups'
-    oder 'US-Konzerne und Scale-ups'.
+    Removes redundant consecutive chapter headings, e.g.
+    '## 3. US-Konzerne und Scale-ups' followed by '## US-Konzerne und Scale-ups'
+    or 'US-Konzerne und Scale-ups'.
     """
     if not text:
         return text
@@ -814,11 +814,11 @@ def _remove_duplicate_headings(text: str) -> str:
         line = lines[i]
         cleaned_lines.append(line)
 
-        # Prüfen, ob die aktuelle Zeile eine Kapitel-Hauptüberschrift ist (z. B. ## 3. ...)
+        # Check whether the current line is a main chapter heading (e.g. ## 3. ...)
         m = re.match(r"^##\s+(\d+\.\s*.+)$", line.strip())
         if m:
             main_title = _extract_title(line)
-            # Schaue nach vorne über Leerzeilen hinweg zur nächsten nicht-leeren Zeile
+            # Look ahead past blank lines to the next non-empty line
             j = i + 1
             while j < len(lines) and not lines[j].strip():
                 j += 1
@@ -834,7 +834,7 @@ def _remove_duplicate_headings(text: str) -> str:
                         or next_title.startswith(main_title)
                     )
                 ):
-                    # Überspringe next_line und eventuell nachfolgende Leerzeilen
+                    # Skip next_line and any blank lines that follow
                     j += 1
                     while j < len(lines) and not lines[j].strip():
                         j += 1
@@ -845,17 +845,17 @@ def _remove_duplicate_headings(text: str) -> str:
 
 
 def _clean_report_text(text: str) -> str:
-    """Bereinigt typische LLM-Formatierungsunsauberkeiten und doppelte Überschriften."""
+    """Cleans up typical LLM formatting blemishes and duplicate headings."""
     import re
 
-    # 1) Fehlende Leerzeichen um Währungszeichen (€) beheben (z. B. "45.000 €und", "60.000€aus")
+    # 1) Fix missing spaces around the currency sign (€) (e.g. "45.000 €und", "60.000€aus")
     text = re.sub(r"(\d)€", r"\1 €", text)
     text = re.sub(r"€([A-Za-zäöüÄÖÜ0-9\[])", r"€ \1", text)
 
-    # 2) Doppelte aufeinanderfolgende Kapitelüberschriften entfernen
+    # 2) Remove duplicate consecutive chapter headings
     text = _remove_duplicate_headings(text)
 
-    # 3) Unschöne Denglisch-Wortschöpfungen bereinigen
+    # 3) Clean up ugly Denglisch (German-English) coinages
     text = re.sub(r"\bCompensation-Modell(en?|s)?\b", r"Vergütungsmodell\1", text)
     text = re.sub(r"\bCompensation-Benchmark(s)?\b", r"Gehaltsbenchmark\1", text)
 
@@ -863,7 +863,7 @@ def _clean_report_text(text: str) -> str:
 
 
 def _extract_sources_from_text(text: str) -> dict[int, dict]:
-    """Liest Quellen aus dem Literaturverzeichnis am Textende aus (Fallback/Ergänzung)."""
+    """Reads sources from the bibliography at the end of the text (fallback/supplement)."""
     import re
 
     sources_by_num: dict[int, dict] = {}
@@ -894,13 +894,13 @@ def _extract_sources_from_text(text: str) -> dict[int, dict]:
 
 
 def linkify_citations(report: str, sources: list[dict] | None) -> str:
-    """Wandelt Zitationen ([n], [n, m], [n-m], [n–m], [Quelle n], [vgl. n]) in klickbare Links um."""
+    """Turns citations ([n], [n, m], [n-m], [n–m], [Quelle n], [vgl. n]) into clickable links."""
     if not report:
         return report
 
     import re
 
-    # 1) Quellenverzeichnis aufbauen (Prio: übergebene sources -> aus Text extrahierte Quellen)
+    # 1) Build the source map (priority: passed-in sources -> sources extracted from the text)
     source_map: dict[int, dict] = {}
     if sources:
         for i, s in enumerate(sources, start=1):
@@ -915,7 +915,7 @@ def linkify_citations(report: str, sources: list[dict] | None) -> str:
     if not source_map:
         return report
 
-    # 2) Text in Hauptteil und Literaturverzeichnis trennen
+    # 2) Split the text into main body and bibliography
     bib_match = re.search(
         r"(?:\n|\A)\s*(##\s+(?:Literaturverzeichnis|Quellen)[\s\S]*)$",
         report,
@@ -951,7 +951,7 @@ def linkify_citations(report: str, sources: list[dict] | None) -> str:
         if m.group(0).endswith("](") or "(http" in inner:
             return m.group(0)
 
-        # Präfix wie "Quelle", "Quellen", "Ref.", "vgl.", "siehe" bereinigen
+        # Strip a prefix like "Quelle", "Quellen", "Ref.", "vgl.", "siehe"
         clean_inner = re.sub(
             r"^(?:Quellen?|Ref\.?|vgl\.?|siehe)\s*:?\s*", "", inner, flags=re.IGNORECASE
         ).strip()
@@ -963,7 +963,7 @@ def linkify_citations(report: str, sources: list[dict] | None) -> str:
         has_valid_citation = False
 
         for tok in tokens:
-            # Bereich wie "1-4" oder "1–4" oder "1 — 4"
+            # Range like "1-4" or "1–4" or "1 — 4"
             range_match = re.match(r"^(\d+)\s*[-–—]\s*(\d+)$", tok)
             if range_match:
                 start, end = int(range_match.group(1)), int(range_match.group(2))
@@ -973,7 +973,7 @@ def linkify_citations(report: str, sources: list[dict] | None) -> str:
                         has_valid_citation = True
                     continue
 
-            # Einzelne Zahl wie "14"
+            # Single number like "14"
             if tok.isdigit():
                 n = int(tok)
                 links.append(_format_single_link(n))
@@ -998,13 +998,13 @@ def linkify_citations(report: str, sources: list[dict] | None) -> str:
 
 def _report_markdown_for_pdf(project: ResearchProject) -> str:
     """
-    Markdown für den PDF-Export.
+    Markdown for the PDF export.
 
-    Ist der finale Report vorhanden, wird er verwendet (die Assembly bringt
-    bereits Titel, Abstract und Inhaltsverzeichnis mit). Sonst wird aus der
-    persistierten Gliederung + den bereits geschriebenen Kapiteln ein
-    TEILBERICHT gebaut — mit Inhaltsverzeichnis, in dem geplante, aber noch
-    nicht geschriebene Kapitel markiert sind (Lauf abgebrochen).
+    If the final report exists, it is used (the assembly already includes
+    the title, abstract and table of contents). Otherwise a PARTIAL REPORT
+    is built from the persisted outline + the chapters already written —
+    with a table of contents that marks planned but not-yet-written
+    chapters (run aborted).
     """
     if project.report:
         return project.report
@@ -1043,10 +1043,10 @@ def _report_markdown_for_pdf(project: ResearchProject) -> str:
 
 def report_to_pdf(project: ResearchProject) -> bytes:
     """
-    Baut aus Frage + Report + Quellen ein PDF und liefert die rohen Bytes.
+    Builds a PDF from question + report + sources and returns the raw bytes.
 
-    Wirft ValueError, wenn weder ein Report noch geschriebene Kapitel
-    existieren (Endpunkt → 409).
+    Raises ValueError if neither a report nor written chapters exist
+    (endpoint → 409).
     """
     report_md = _report_markdown_for_pdf(project)
 
@@ -1057,25 +1057,25 @@ def report_to_pdf(project: ResearchProject) -> bytes:
     import markdown
     from xhtml2pdf import pisa
 
-    # 1) Report-Markdown bereinigen & Zitate verlinken
+    # 1) Clean the report Markdown & link the citations
     cleaned_md = _clean_report_text(report_md)
     linkified_report = linkify_citations(cleaned_md, project.sources)
     report_html = markdown.markdown(linkified_report, extensions=["extra", "sane_lists"])
 
-    # Zitat-Links im HTML mit eckigen Klammern [n] versehen & mit citation-Klasse stylen
+    # Wrap citation links in the HTML in square brackets [n] & style them via the citation class
     report_html = re.sub(
         r'<a\s+href="([^"]+)"(?:\s+title="([^"]*)")?>\s*(\d+)\s*</a>',
         r'<a href="\1" class="citation" title="\2">[\3]</a>',
         report_html,
     )
 
-    # Unicode-Zeichen, die im Standard-PDF-Font als schwarzes Quadrat enden würden,
-    # im fertigen HTML sicher durch Entities ersetzen (stört Markdown nicht)
+    # Safely replace Unicode characters that would end up as a black square in the
+    # standard PDF font with entities in the finished HTML (does not bother Markdown)
     for char, replacement in _UNICODE_REPLACEMENTS.items():
         if char in report_html:
             report_html = report_html.replace(char, replacement)
 
-    # 2) Quellenliste anhängen (falls im Report noch kein eigenes Verzeichnis vorhanden)
+    # 2) Append the source list (if the report does not yet contain its own bibliography)
     has_bib = bool(
         re.search(r"<h[1-6]>[^<]*(?:Literaturverzeichnis|Quellen)", report_html, re.IGNORECASE)
     )
@@ -1091,7 +1091,7 @@ def report_to_pdf(project: ResearchProject) -> bytes:
     else:
         sources_html = ""
 
-    # 3) Kopfzeile mit Metadaten (Datum, Tiefe, Zitierstil, Status)
+    # 3) Header with metadata (date, depth, citation style, status)
     created = project.created_at.astimezone(UTC).strftime("%d.%m.%Y %H:%M")
     depth_val = getattr(project, "depth", None)
     depth_label = "Deep Research" if depth_val == "deep" else "Standard (Quick)"
@@ -1129,8 +1129,8 @@ def report_to_pdf(project: ResearchProject) -> bytes:
       {sources_html}
     </body></html>"""
 
-    # 4) HTML → PDF. pisa schreibt in ein BytesIO; Fehler landen in
-    #    err (Log-Blick lohnt sich, wenn mal etwas komisch aussieht).
+    # 4) HTML → PDF. pisa writes into a BytesIO; errors land in
+    #    err (worth a look at the log if something ever looks odd).
     buffer = io.BytesIO()
     result = pisa.CreatePDF(html, dest=buffer, encoding="utf-8")
     if result.err:
@@ -1142,7 +1142,7 @@ def report_to_pdf(project: ResearchProject) -> bytes:
 
 
 # ============================================================================
-# 4) STAGE 3: Deep-Report nach Outline-Freigabe fortsetzen
+# 4) STAGE 3: continue a deep report after outline approval
 # ============================================================================
 async def resume_research_stream(
     session: AsyncSession,
@@ -1150,11 +1150,11 @@ async def resume_research_stream(
     outline: dict,
 ) -> AsyncIterator[str]:
     """
-    Resumed einen pausierten Deep-Report mit der freigegebenen Gliederung.
+    Resumes a paused deep report with the approved outline.
 
-    Der Graph wurde am interrupt() nach der Outline pausiert; hier wird er
-    mit Command(resume=outline) weitergefuehrt — der Rest der Pipeline
-    (Kapitel-Recherche, Writer, Assembly) laeuft wie bei /run.
+    The graph was paused at interrupt() after the outline; here it is
+    continued with Command(resume=outline) — the rest of the pipeline
+    (chapter research, writer, assembly) runs as with /run.
     """
     from langgraph.types import Command
 
@@ -1210,7 +1210,7 @@ async def resume_research_stream(
                 node = metadata.get("langgraph_node", "") if isinstance(metadata, dict) else ""
                 text = getattr(chunk, "content", "")
                 if node == "writer" and isinstance(text, str) and text:
-                    # Deep-Reports streamen über chapter events, nicht tokens
+                    # Deep reports stream via chapter events, not tokens
                     pass
             elif mode == "updates":
                 for node, delta in payload.items():
@@ -1269,15 +1269,15 @@ async def resume_research_stream(
 
 
 # ============================================================================
-# 5) ADMIN-SICHT (Stufe 5): alle Recherchen aller User
+# 5) ADMIN VIEW (stage 5): all research of all users
 # ============================================================================
 async def list_all_projects(session: AsyncSession) -> list[dict]:
     """
-    Alle Projekte (aller User) mit Besitzer-E-Mail — nur für Admins
-    (der Endpunkt hängt RequireAdmin davor).
+    All projects (of all users) with the owner's email — admins only
+    (the endpoint puts RequireAdmin in front of it).
 
-    Join per Hand (statt SQLModel-Relationship): Im async-Kontext sind
-    explizite SELECTs sauberer als lazy-loaded Relationships.
+    Join by hand (instead of a SQLModel relationship): in an async context,
+    explicit SELECTs are cleaner than lazy-loaded relationships.
     """
     result = await session.exec(
         select(ResearchProject, User.email)

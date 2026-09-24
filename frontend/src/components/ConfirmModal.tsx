@@ -1,9 +1,9 @@
 // ============================================================================
-// ConfirmModal.tsx — Schickes Bestätigungs-Modal im Theme (statt window.confirm).
+// ConfirmModal.tsx — stylish confirmation modal in the theme (instead of window.confirm).
 // ============================================================================
-// Bewusst schlank ohne zusätzliche Dependency (Radix & Co. sparen wir uns):
-// Fixiertes Overlay + zentrierte Karte, ESC/Overlay-Klick schließen,
-// destruktive Variante (Löschen) in Rot.
+// Deliberately lean, without an additional dependency (we skip Radix & co.):
+// fixed overlay + centered card, ESC/overlay click closes it,
+// destructive variant (delete) in red.
 
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
@@ -30,7 +30,7 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
-  // ESC schließt (nur wenn offen)
+  // ESC closes (only when open)
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -42,10 +42,10 @@ export function ConfirmModal({
 
   if (!open) return null;
 
-  // PORTAL auf den body: Elternelemente mit CSS-Transform (z. B. hover:
-  // -translate-y auf Chat-Karten) machen position:fixed sonst relativ zur
-  // KARTE — das Modal "lag" auf der Karte und flackerte (User-Feedback).
-  // Ein Portal entkommt jedem Transform-/Overflow-Kontext.
+  // PORTAL onto the body: parent elements with a CSS transform (e.g. hover:
+  // -translate-y on chat cards) otherwise make position:fixed relative to the
+  // CARD — the modal "sat" on the card and flickered (user feedback).
+  // A portal escapes any transform/overflow context.
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"

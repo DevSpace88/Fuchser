@@ -1,10 +1,10 @@
 """
-models/document.py — Tabelle "documents": hochgeladene Dateien pro Recherche
-==============================================================================
+models/document.py — table "documents": uploaded files per research run
+=======================================================================
 
-Beim Upload wird der Text SOFORT extrahiert und in extracted_text gesichert
-(Original-Bytes speichern wir NICHT — Speicherplatz & DSGVO-Freundlichkeit).
-Der Agent durchsucht später nur noch den Text, nie die Binärdatei.
+On upload, the text is extracted IMMEDIATELY and stored in extracted_text
+(we do NOT keep the original bytes — storage space & GDPR friendliness).
+The agent later searches only the text, never the binary file.
 """
 
 import uuid
@@ -15,12 +15,12 @@ from sqlmodel import Field, SQLModel
 
 from app.models.base import TimestampMixin
 
-# Hartes Limit für extrahierten Text (Zeichen) — 1 MB Text ≈ 250k Tokens.
+# Hard limit for extracted text (characters) — 1 MB of text ≈ 250k tokens.
 MAX_TEXT_CHARS = 1_000_000
 
 
 class Document(TimestampMixin, SQLModel, table=True):
-    """Eine hochgeladene Datei mit extrahiertem Text, gehört zu EINER Recherche."""
+    """An uploaded file with extracted text, belonging to ONE research run."""
 
     __tablename__ = "documents"
 
@@ -37,10 +37,10 @@ class Document(TimestampMixin, SQLModel, table=True):
     mime_type: str = Field(nullable=False, max_length=100)
     size_bytes: int = Field(nullable=False)
 
-    # Wie viele Zeichen der Extraktion überlebt haben (Anzeige + Debugging).
+    # How many characters survived extraction (display + debugging).
     char_count: int = Field(default=0, nullable=False)
 
-    # Der extrahierte Volltext (gekappt auf MAX_TEXT_CHARS). nullable gehört
-    # bei sa_column-Nutzung in den Column-Aufruf, nicht ins Field (SQLModel-
-    # Regel — sonst crasht jeder Insert mit einer kryptischen Meldung).
+    # The extracted full text (capped at MAX_TEXT_CHARS). When using
+    # sa_column, nullable belongs in the Column call, not in the Field
+    # (SQLModel rule — otherwise every insert crashes with a cryptic error).
     extracted_text: str = Field(sa_column=Column(sa.Text, nullable=False))

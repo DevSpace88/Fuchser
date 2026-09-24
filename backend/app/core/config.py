@@ -1,28 +1,28 @@
 """
-core/config.py — Zentrale Konfiguration aus Umgebungsvariablen (.env)
-=====================================================================
+core/config.py — Central configuration from environment variables (.env)
+========================================================================
 
-WARUM diese Datei?
-------------------
-Früher (und im alten Tutorial `legacy/main_tutorial.py`) standen Secret-Key,
-Algorithmus etc. HARDCODED im Quellcode. Das ist gefährlich:
+WHY this file?
+--------------
+Earlier (and in the old tutorial `legacy/main_tutorial.py`) the secret key,
+algorithm etc. were HARDCODED in the source code. That is dangerous:
 
-  * Secrets landen in git -> jeder Entwickler & jeder Fork hat sie.
-  * Für Dev/Prod braucht man denselben Code mit anderen Werten -> unlösbar.
+  * Secrets end up in git -> every developer & every fork has them.
+  * For dev/prod you need the same code with different values -> unsolvable.
 
-Die Lösung: Konfiguration über **Umgebungsvariablen** (environment variables).
-In Entwicklung legen wir sie in eine `.env`-Datei, in Produktion setzt man sie
-im Hosting (z. B. Docker-Compose, Kubernetes, Railway, ...).
+The solution: configuration via **environment variables**. In development we
+put them into a `.env` file; in production you set them in the hosting
+environment (e.g. Docker-Compose, Kubernetes, Railway, ...).
 
-`pydantic-settings` macht das komfortabel:
-  * Liest automatisch aus .env + echten Umgebungsvariablen.
-  * Typ-Validierung (eine ungültige Port-Nummer wirft sofort einen Fehler).
-  * Default-Werte für Entwicklung.
+`pydantic-settings` makes this comfortable:
+  * Reads automatically from .env + real environment variables.
+  * Type validation (an invalid port number immediately raises an error).
+  * Default values for development.
 
-WO man was findet:
-  * Die `.env`-Datei liegt im Wurzelverzeichnis (siehe `.env.example`).
-  * Docker-Compose reicht die Variablen an den Container weiter
-    (siehe docker-compose.yml -> `environment:`).
+WHERE to find what:
+  * The `.env` file lives in the root directory (see `.env.example`).
+  * Docker-Compose passes the variables through to the container
+    (see docker-compose.yml -> `environment:`).
 """
 
 from functools import lru_cache
@@ -34,19 +34,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     """
-    Alle Konfigurationswerte unserer App, typisiert und validiert.
+    All configuration values of our app, typed and validated.
 
-    Konvention: ALLE Werte haben hier einen Default, der für die Entwicklung
-    funktioniert. In Produktion werden sie über die .env / Umgebungsvariablen
-    überschrieben.
+    Convention: ALL values have a default here that works for development.
+    In production they are overridden via .env / environment variables.
     """
 
-    # ---- pydantic-settings: wie soll geladen werden? ----------------------
-    # model_config ersetzt die alte class Config:
-    #   env_file      -> lese Werte aus dieser .env-Datei
-    #   env_file_encoding -> Zeichensatz der .env
-    #   case_sensitive -> "SECRET_KEY" != "secret_key" (case-sensitiv)
-    #   extra="ignore"  -> unbekannte Variablen in .env ignorieren (nicht crashen)
+    # ---- pydantic-settings: how should values be loaded? ------------------
+    # model_config replaces the old class Config:
+    #   env_file         -> read values from this .env file
+    #   env_file_encoding -> character set of the .env
+    #   case_sensitive   -> "SECRET_KEY" != "secret_key" (case-sensitive)
+    #   extra="ignore"   -> ignore unknown variables in .env (don't crash)
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -54,37 +53,37 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # ---- Allgemeines ------------------------------------------------------
-    # In welcher Umgebung laufen wir? Bestimmt z. B. Debug-Verhalten.
+    # ---- General -----------------------------------------------------------
+    # Which environment are we running in? Determines e.g. debug behavior.
     environment: Literal["dev", "prod", "test"] = "dev"
 
     # ---- Security / JWT ---------------------------------------------------
-    # Secret-Key zum Signieren der JWTs. In Produktion PFLICHT (siehe Validator).
+    # Secret key for signing the JWTs. MANDATORY in production (see validator).
     secret_key: str = "dev-only-not-secret-replace-in-production"
-    # Signatur-Algorithmus. HS256 = HMAC mit symmetrischem Schlüssel.
+    # Signature algorithm. HS256 = HMAC with a symmetric key.
     jwt_algorithm: str = "HS256"
-    # Lebensdauer Access- / Refresh-Token.
+    # Lifetime of the access / refresh token.
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
-    # ---- Datenbank (PostgreSQL) ------------------------------------------
+    # ---- Database (PostgreSQL) ---------------------------------------------
     postgres_user: str = "app_user"
     postgres_password: str = "change_me"
     postgres_db: str = "app_db"
-    postgres_host: str = "localhost"  # "db" im Compose-Netz, "localhost" lokal
+    postgres_host: str = "localhost"  # "db" in the Compose network, "localhost" locally
     postgres_port: int = 5432
 
     @property
     def database_url(self) -> str:
         """
-        Baut die SQLAlchemy-URL für Postgres zusammen.
+        Assembles the SQLAlchemy URL for Postgres.
 
         Format:
             postgresql+asyncpg://USER:PASSWORD@HOST:PORT/DB
 
-        Das "+asyncpg" sagt SQLAlchemy: nutze den async-Treiber.
-        Für Sync (z. B. Alembic) nutzen wir stattdessen "+psycopg" oder
-        ohne Treiber-Zusatz (siehe alembic/env.py).
+        The "+asyncpg" tells SQLAlchemy: use the async driver.
+        For sync (e.g. Alembic) we use "+psycopg" instead, or no driver
+        suffix at all (see alembic/env.py).
         """
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
@@ -94,72 +93,73 @@ class Settings(BaseSettings):
     @property
     def sync_database_url(self) -> str:
         """
-        Sync-Variante der DB-URL, die Alembic braucht.
+        Sync variant of the DB URL that Alembic needs.
 
-        Alembic läuft (mit unserem Setup) synchron; asyncpg geht dort nicht.
-        Wir nutzen psycopg3 (sync) als Treiber. Falls asyncpg installiert ist,
-        ist psycopg meist auch da — sonst via `uv pip install psycopg` nachholen.
+        Alembic runs synchronously (with our setup); asyncpg does not work
+        there. We use psycopg3 (sync) as the driver. If asyncpg is installed,
+        psycopg is usually present too — otherwise install it via
+        `uv pip install psycopg`.
         """
         return (
             f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
-    # ---- CORS -------------------------------------------------------------
-    # Welche Origins darf der Browser für API-Aufrufe nutzen?
-    # In Entwicklung: localhost:5173 (Vite). Kommasepariert in der .env.
+    # ---- CORS --------------------------------------------------------------
+    # Which origins may the browser use for API calls?
+    # In development: localhost:5173 (Vite). Comma-separated in the .env.
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     @property
     def cors_origins_list(self) -> list[str]:
-        """Zerlegt den Kommaseparierten String in eine saubere Liste."""
+        """Splits the comma-separated string into a clean list."""
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
-    # ---- Agent / LangGraph ("Deep Research"-Klon, siehe PLAN.md) ---------
-    # API-Keys leer -> Agent-Features laufen im Echo-/Fallback-Modus
-    # (sinnvoll für Tests und den allerersten Start ohne Keys).
+    # ---- Agent / LangGraph ("Deep Research" clone, see PLAN.md) ------------
+    # Empty API keys -> agent features run in echo/fallback mode
+    # (useful for tests and the very first start without keys).
     #
-    # Provider-Auswahl: "deepseek" (Standard) oder "glm" (Z.ai GLM Coding
-    # Plan, internationale API). Es wird automatisch der andere genommen,
-    # wenn für den gewählten Provider kein Key konfiguriert ist.
+    # Provider choice: "deepseek" (default) or "glm" (Z.ai GLM Coding
+    # Plan, international API). The other one is used automatically
+    # if no key is configured for the selected provider.
     llm_provider: Literal["deepseek", "glm"] = "deepseek"
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
     glm_api_key: str = ""
     glm_model: str = "glm-5.3"
-    # OpenAI-kompatibler Chat-Completions-Endpoint des GLM CODING PLANS
-    # (nicht die China-Adresse open.bigmodel.cn!). Siehe docs.z.ai/devpack.
+    # OpenAI-compatible chat-completions endpoint of the GLM CODING PLAN
+    # (not the China address open.bigmodel.cn!). See docs.z.ai/devpack.
     glm_base_url: str = "https://api.z.ai/api/coding/paas/v4"
     tavily_api_key: str = ""
 
-    # Redis für Background-Tasks (Worker + Progress-PubSub)
-    # Coolify: komplette URL via REDIS_URL env, z. B. redis://redis:6379/0
+    # Redis for background tasks (worker + progress PubSub)
+    # Coolify: full URL via REDIS_URL env, e.g. redis://redis:6379/0
     redis_url: str = "redis://localhost:6379/0"
 
     @property
     def agent_database_url(self) -> str:
         """
-        Reine asyncpg-DSN (OHNE "+asyncpg"-Suffix) für den LangGraph-
-        Checkpointer. AsyncPostgresSaver will einen nackten Postgres-String,
-        SQLAlchemy-Engines dagegen den Treiber-Suffix (siehe database_url).
+        Pure asyncpg DSN (WITHOUT the "+asyncpg" suffix) for the LangGraph
+        checkpointer. AsyncPostgresSaver wants a bare Postgres string,
+        whereas SQLAlchemy engines want the driver suffix (see database_url).
         """
         return (
             f"postgresql://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
-    # ---- Seeding (erster Admin) ------------------------------------------
-    # Beim ersten Start legen wir automatisch einen Admin-User an,
-    # damit man sich sofort einloggen kann. Bleibt leer -> kein Seeding.
+    # ---- Seeding (first admin) ---------------------------------------------
+    # On first startup we automatically create an admin user so you can
+    # log in right away. Left empty -> no seeding.
     seed_admin_email: str = ""
     seed_admin_password: str = ""
 
-    # ---- Validierung: In Produktion MUSS ein echter Secret-Key gesetzt sein.
+    # ---- Validation: in production a real secret key MUST be set.
     @field_validator("secret_key")
     @classmethod
     def _secret_key_must_be_set_in_prod(cls, v: str, info) -> str:
-        # info.data enthält die bereits geparsten Felder; "environment" steht
-        # VOR secret_key in der Klasse, ist also schon bekannt.
+        # info.data contains the already-parsed fields; "environment" is
+        # declared BEFORE secret_key in the class, so it is already known.
         env = info.data.get("environment", "dev")
         if env == "prod" and v.startswith("dev-only"):
             raise ValueError(
@@ -171,15 +171,15 @@ class Settings(BaseSettings):
 
 
 # ----------------------------------------------------------------------------
-# settings — das Singleton, das überall importiert wird.
+# settings — the singleton that is imported everywhere.
 # ----------------------------------------------------------------------------
-# Warum ein lru_cache? Beim ersten Aufruf wird Settings() konstruiert
-# (liest .env, validiert). Bei jedem weiteren Aufruf liefert der Cache
-# DASSELBE Objekt zurück — ohne State-Drift.
+# Why an lru_cache? On the first call Settings() is constructed
+# (reads .env, validates). On every further call the cache returns
+# the SAME object — no state drift.
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
 
 
-# Abkürzung: `from app.core.config import settings` reicht meistens.
+# Shortcut: `from app.core.config import settings` is usually enough.
 settings = get_settings()

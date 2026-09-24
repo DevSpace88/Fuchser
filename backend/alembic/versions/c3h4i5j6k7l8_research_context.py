@@ -4,11 +4,11 @@ Revision ID: c3h4i5j6k7l8
 Revises: b2g3h4i5j6k7
 Create Date: 2026-08-29
 
-Chat-Kontext: Der Client schickt beim Anlegen eine kompakte Zusammenfassung
-des bisherigen Gesprächs (Fragen + Report-Auszüge). Sie wandert in den
-Graph-State und wird Supervisor + Synthesizer als Kontext präsentiert —
-unabhängig davon, ob frühere Läufe im Thread erfolgreich waren (Fehler-
-fälle wie Provider-Rate-Limits verlieren so keinen Kontext mehr).
+Chat context: on creation the client sends a compact summary of the
+conversation so far (questions + report excerpts). It goes into the
+graph state and is presented to the supervisor + synthesizer as context —
+regardless of whether earlier runs in the thread succeeded (failure
+cases such as provider rate limits no longer lose their context).
 """
 
 from typing import Sequence, Union

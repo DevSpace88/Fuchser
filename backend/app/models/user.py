@@ -1,26 +1,26 @@
 """
-models/user.py — User-Modell (Tabelle "users")
-==============================================
+models/user.py — user model (table "users")
+===========================================
 
-Das wichtigste Modell: Benutzerkonten mit Passwort, Rolle und Aktiv-Status.
+The most important model: user accounts with password, role, and active status.
 
-WICHTIG: In SQLModel ist ein Modell gleichzeitig ORM-Tabelle UND Pydantic-
-Schema. Das bedeutet: Standardmäßig werden ALLE Felder in API-Antworten
-exponiert — inklusive `hashed_password`! Das wollen wir natürlich NICHT.
+IMPORTANT: In SQLModel a model is simultaneously an ORM table AND a Pydantic
+schema. This means: by default ALL fields are exposed in API responses —
+including `hashed_password`! Of course we do NOT want that.
 
-Deshalb definieren wir im schemas/-Ordner SEPARATE Pydantic-Modelle für
-Ein-/Ausgabe (UserRead, UserCreate). Das User-Modell hier ist NUR für die DB.
+That is why we define SEPARATE Pydantic models for input/output in the
+schemas/ folder (UserRead, UserCreate). The User model here is ONLY for the DB.
 
-So trennen wir sauber:
-  - Modelle (hier)    = wie die Daten in der DB liegen
-  - Schemas (schemas/) = wie die Daten in die API rein/rausgehen
+This keeps things cleanly separated:
+  - Models (here)      = how the data sits in the DB
+  - Schemas (schemas/) = how the data enters/leaves the API
 
-Warum Rollen als Enum?
-----------------------
-Wir speichern die Rolle als Enum: "user" oder "admin". Das ist typsicher
-(keine Tippfehler wie "adnin") und selbsterklärend. Für komplexere
-Berechtigungen (fine-grained permissions) würde man zusätzlich eine
-`user_permissions`-Tabelle anlegen — siehe README "Erweiterungen".
+Why roles as an enum?
+---------------------
+We store the role as an enum: "user" or "admin". That is type-safe (no typos
+like "adnin") and self-documenting. For more fine-grained permissions you
+would additionally create a `user_permissions` table — see the README section
+"Extensions".
 """
 
 import enum
@@ -33,20 +33,20 @@ from sqlmodel import Field, SQLModel
 
 from app.models.base import TimestampMixin
 
-# TYPE_CHECKING: Importe darunter nur für Type-Checker, nicht zur Laufzeit.
-# Verhindert Zirkelimporte (RefreshToken referenziert User und umgekehrt).
+# TYPE_CHECKING: imports below are only for type checkers, not at runtime.
+# Prevents circular imports (RefreshToken references User and vice versa).
 if TYPE_CHECKING:
     pass
 
 
 class UserRole(enum.StrEnum):
     """
-    Mögliche Rollen eines Users.
+    Possible roles of a user.
 
-    StrEnum (Python 3.11+) kombiniert str + Enum: die Werte sind
-    JSON-serialisierbar UND typsicher (man kann nur USER/ADMIN zuweisen,
-    keinen beliebigen String). Moderner Ersatz für das ältere
-    `class X(str, enum.Enum)`-Muster.
+    StrEnum (Python 3.11+) combines str + Enum: the values are
+    JSON-serializable AND type-safe (you can only assign USER/ADMIN,
+    not an arbitrary string). Modern replacement for the older
+    `class X(str, enum.Enum)` pattern.
     """
 
     USER = "user"
@@ -55,20 +55,21 @@ class UserRole(enum.StrEnum):
 
 class User(TimestampMixin, SQLModel, table=True):
     """
-    Tabelle "users" — ein Benutzerkonto.
+    Table "users" — a user account.
 
-    Vererbung:
-      TimestampMixin -> liefert created_at / updated_at
-      SQLModel       -> macht es zur ORM-Tabelle (wegen table=True)
+    Inheritance:
+      TimestampMixin -> provides created_at / updated_at
+      SQLModel       -> makes it an ORM table (because of table=True)
     """
 
     __tablename__ = "users"
 
-    # Primärschlüssel. Wir nutzen UUID statt AutoIncrement-Integer, weil UUIDs:
-    #   * keine Aufschluss über die Anzahl der User geben (Sicherheit)
-    #   * ohne zentralen Counter erzeugt werden können (verteilt, ID-Kollision sicher)
-    #   * perfekt für öffentliche IDs geeignet sind
-    # default_factory=uuid.uuid4 -> Python erzeugt eine UUID beim Anlegen.
+    # Primary key. We use a UUID instead of an auto-increment integer, because
+    # UUIDs:
+    #   * reveal nothing about the number of users (security)
+    #   * can be generated without a central counter (distributed, collision-safe)
+    #   * are perfectly suited for public IDs
+    # default_factory=uuid.uuid4 -> Python generates a UUID when the record is created.
     id: uuid.UUID = Field(
         default_factory=uuid.uuid4,
         primary_key=True,
@@ -76,38 +77,38 @@ class User(TimestampMixin, SQLModel, table=True):
         nullable=False,
     )
 
-    # E-Mail = eindeutig (jeder E-Mail darf nur ein Konto haben).
-    # index=True -> DB legt einen Index an, beschleunigt die Login-Suche.
+    # Email = unique (each email may only have one account).
+    # index=True -> the DB creates an index, which speeds up the login lookup.
     email: str = Field(
         unique=True,
         index=True,
         nullable=False,
         max_length=255,
-        # schema_extra im Field: Validierung für Pydantic (z. B. Format-E-Mail).
-        # In SQLModel kann man Pydantic-Validatoren direkt im Field setzen.
+        # schema_extra in Field: validation for Pydantic (e.g. email format).
+        # In SQLModel you can set Pydantic validators directly in Field.
     )
 
-    # Gehashtes Passwort. NIEMALS das Klartext-Passwort speichern!
-    # Das Hashen passiert in app/core/security.py via pwdlib.
-    # Feldname "hashed_password" statt "password" dokumentiert das explizit.
+    # Hashed password. NEVER store the plaintext password!
+    # Hashing happens in app/core/security.py via pwdlib.
+    # The field name "hashed_password" instead of "password" makes that explicit.
     hashed_password: str = Field(nullable=False, exclude=True)
-    # ^ exclude=True -> wird bei SQLModel.dict()/JSON nie serialisiert.
-    #   Doppelter Schutz: Auch wenn jemand versehentlich das User-Model returned,
-    #   landet das Passwort nicht in der Antwort.
+    # ^ exclude=True -> never serialized by SQLModel.dict()/JSON.
+    #   Double protection: even if someone accidentally returns the User model,
+    #   the password does not end up in the response.
 
-    # Vollständiger Name (optional, nur für Anzeige).
+    # Full name (optional, display only).
     full_name: str | None = Field(default=None, max_length=255)
 
-    # Rolle: USER (default) oder ADMIN. Wir speichern sie in der DB als
-    # Postgres-Enum-Typ (siehe alembic/versions/0001_initial.py -> "userrole").
+    # Role: USER (default) or ADMIN. We store it in the DB as a Postgres enum
+    # type (see alembic/versions/0001_initial.py -> "userrole").
     #
-    # sa_column=Column(sa.Enum(...)) statt nur `Field(...)` sagt SQLModel: "Nutze
-    # diesen konkreten SQLAlchemy-Spaltentyp." Zwei wichtige Flags am Enum:
+    # sa_column=Column(sa.Enum(...)) instead of just `Field(...)` tells SQLModel:
+    # "Use this concrete SQLAlchemy column type." Two important flags on the enum:
     #   * values_callable=lambda e: [m.value for m in e]:
-    #     SQLAlchemy nimmt standardmäßig die Enum-NAMEN ("ADMIN"), wir wollen
-    #     aber die Enum-WERTE ("admin") — sonst passt es nicht zum DB-Typ.
-    #   * create_type=False: der Typ wird durch Alembic-Migrationen angelegt,
-    #     SQLAlchemy soll ihn NICHT zur Laufzeit nochmal automatisch erzeugen.
+    #     By default SQLAlchemy uses the enum NAMES ("ADMIN"), but we want the
+    #     enum VALUES ("admin") — otherwise it does not match the DB type.
+    #   * create_type=False: the type is created by Alembic migrations;
+    #     SQLAlchemy should NOT create it again automatically at runtime.
     role: UserRole = Field(
         default=UserRole.USER,
         sa_column=Column(
@@ -122,20 +123,20 @@ class User(TimestampMixin, SQLModel, table=True):
         ),
     )
 
-    # Aktiv-Status. False = Konto gesperrt (z. B. nach Kündigung), kann sich
-    # nicht einloggen. Unterschied zu "deleted": deaktivierte User bleiben
-    # erhalten (Referenzen auf sie bleiben gültig), können sich nur nicht anmelden.
+    # Active status. False = account locked (e.g. after cancellation), cannot
+    # log in. Difference to "deleted": deactivated users are retained
+    # (references to them stay valid), they just cannot log in.
     is_active: bool = Field(default=True, nullable=False)
 
-    # Beziehung zu Refresh-Tokens (OneToMany).
-    # `Relationship` wird lazy geladen; wir vermeiden das im async-Kontext
-    # und holen Tokens stattdessen explizit per select(). Dafür gibt es hier
-    # kein Relationship-Feld — das ist mit async sauberer.
-    # (Wer's mag: from sqlmodel import Relationship und dann
+    # Relationship to refresh tokens (OneToMany).
+    # `Relationship` is loaded lazily; we avoid that in the async context and
+    # fetch tokens explicitly via select() instead. Hence there is no
+    # Relationship field here — that is cleaner with async.
+    # (If you like: from sqlmodel import Relationship and then
     #  tokens: list["RefreshToken"] = Relationship(back_populates="user"))
 
 
-# Hilfsfunktion für Type-Checker (verkettete Imports):
+# Helper for type checkers (chained imports):
 if TYPE_CHECKING:
-    # RefreshToken referenziert User via ForeignKey — siehe refresh_token.py.
+    # RefreshToken references User via ForeignKey — see refresh_token.py.
     pass

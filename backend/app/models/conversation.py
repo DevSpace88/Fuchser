@@ -1,11 +1,10 @@
 """
-models/conversation.py — Tabelle "conversations": Unterhaltungen als
-eigständige Entität (wie in jedem Chat-Programm).
+models/conversation.py — table "conversations": conversations as their own
+entity (as in any chat program).
 ================================================================================
-Eine Conversation enthält beliebig viele Nachrichten (research_projects).
-Die Historie listet Conversations — Nachfragen sind Nachrichten INNERHALB
-eines Chats, keine eigenen Chats mehr (User-Feedback, Google-AI-Studio-
-Modell).
+A conversation contains any number of messages (research_projects).
+The history lists conversations — follow-ups are messages INSIDE a chat,
+no longer their own chats (user feedback, Google AI Studio model).
 """
 
 import uuid
@@ -18,7 +17,7 @@ from app.models.base import TimestampMixin
 
 
 class Conversation(TimestampMixin, SQLModel, table=True):
-    """Eine Unterhaltung: Titel + alle zugehörigen Fragen/Recherchen."""
+    """A conversation: title + all associated questions/research runs."""
 
     __tablename__ = "conversations"
 
@@ -31,5 +30,5 @@ class Conversation(TimestampMixin, SQLModel, table=True):
         ondelete="CASCADE",
     )
 
-    # Anzeigename (anfangs = erste Frage, gekürzt; umbenennbar).
+    # Display name (initially = first question, truncated; renameable).
     title: str = Field(max_length=200, sa_column=Column(sa.String(200), nullable=False))

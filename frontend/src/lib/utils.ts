@@ -1,8 +1,8 @@
-// src/lib/utils.ts — Hilfsfunktion für shadcn/ui.
+// src/lib/utils.ts — helper function for shadcn/ui.
 //
-// `cn()` kombiniert CSS-Klassen intelligent: Konflikte (z. B. zwei verschiedene
-// padding-Klassen) werden von tailwind-merge aufgelöst, clsx kümmert sich um
-// bedingte Klassen (cn("base", condition && "extra")).
+// `cn()` combines CSS classes intelligently: conflicts (e.g. two different
+// padding classes) are resolved by tailwind-merge; clsx takes care of
+// conditional classes (cn("base", condition && "extra")).
 
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";

@@ -1,10 +1,10 @@
-// components/ui/button.tsx — shadcn/ui Button-Komponente.
+// components/ui/button.tsx — shadcn/ui Button component.
 //
-// shadcn-Komponenten sind KEINE Blackbox aus node_modules — sie liegen als
-// Quellcode in deinem Projekt. Das ist Absicht: du kannst sie beliebig anpassen.
+// shadcn components are NOT a black box from node_modules — they live as
+// source code in your project. That is intentional: you can customize them freely.
 //
-// cva (class-variance-authority) macht aus Varianten + Größen eine getypte API:
-//   <Button variant="destructive" size="sm">Löschen</Button>
+// cva (class-variance-authority) turns variants + sizes into a typed API:
+//   <Button variant="destructive" size="sm">Delete</Button>
 
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
@@ -49,8 +49,8 @@ export interface ButtonProps
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
-    // asChild=true: renderiert KEIN eigenes <button>, sondern gibt die Styles
-    // an das Child weiter. Praktisch z. B. für <Button asChild><Link/></Button>.
+    // asChild=true: does NOT render its own <button>, but passes the styles
+    // on to the child. Handy e.g. for <Button asChild><Link/></Button>.
     const Comp = asChild ? Slot : "button";
     return (
       <Comp

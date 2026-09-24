@@ -1,12 +1,12 @@
 """
-core/seed.py — Bequemlichkeits-Funktion: legt den ersten Admin an.
-==================================================================
+core/seed.py — Convenience function: creates the first admin.
+=============================================================
 
-Damit man nach einem frischen Setup sofort testen kann, legen wir beim Start
-einen Admin-User aus den SEED_ADMIN_*-Variablen an (sofern gesetzt und sofern
-noch nicht vorhanden).
+So you can test right away after a fresh setup, we create an admin user at
+startup from the SEED_ADMIN_* variables (if set, and if it does not exist
+yet).
 
-In Produktion kann man das abschalten, indem man die .env-Variablen leer lässt.
+In production you can turn this off by leaving the .env variables empty.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,20 +19,20 @@ from app.models.user import User, UserRole
 
 async def seed_admin(session: AsyncSession) -> None:
     """
-    Legt — falls konfiguriert — den ersten Admin-User an.
+    Creates — if configured — the first admin user.
 
-    Idempotent: existiert die E-Mail schon, passiert nichts (kein Fehler).
-    Das ist wichtig, weil die Funktion bei JEDEM Start läuft.
+    Idempotent: if the email already exists, nothing happens (no error).
+    That matters because this function runs on EVERY startup.
     """
     if not settings.seed_admin_email or not settings.seed_admin_password:
-        # Keine Seed-Werte gesetzt -> nichts tun.
+        # No seed values set -> do nothing.
         return
 
     existing = (
         await session.exec(select(User).where(User.email == settings.seed_admin_email))
     ).first()
     if existing is not None:
-        # Gibt es schon -> nichts tun.
+        # Already exists -> do nothing.
         return
 
     admin = User(

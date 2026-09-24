@@ -1,19 +1,20 @@
 """
-nodes/researcher.py — DER RESEARCHER (Stufe 3: einmal pro Sub-Frage)
+nodes/researcher.py — THE RESEARCHER (Stage 3: once per sub-question)
 ======================================================================
 
-Das Herzstück: der ReAct-Loop aus Stufe 2, jetzt als Node, der PER `Send`
-mehrfach INSTANZIIERT wird — jede Instanz mit ihrer eigenen Sub-Frage.
+The heart of it: the ReAct loop from Stage 2, now as a node that is
+INSTANTIATED multiple times PER `Send` — each instance with its own
+sub-question.
 
     Send("researcher", {"sub_question": "...", "question": "..."})
 
-Damit das klappt, ohne dass parallele Instanzen sich gegenseitig
-überschreiben, schreiben wir nur in REDUCER-Kanäle (findings/sources mit
-operator.add): Jede Instanz liefert IHREN Beitrag, LangGraph fügt sie
-im Join zusammen (Superstep-Semantik).
+For this to work without parallel instances overwriting each other, we
+only write into REDUCER channels (findings/sources with operator.add):
+each instance delivers ITS contribution, LangGraph merges them in the
+join (superstep semantics).
 
-Der Semaphore (PLAN.md §9) drosselt parallele LLM-Calls gegen
-Rate-Limits des Providers.
+The semaphore (PLAN.md §9) throttles parallel LLM calls against the
+provider's rate limits.
 """
 
 import asyncio
@@ -36,26 +37,26 @@ from app.agent.usage import extract_usage
 
 logger = logging.getLogger(__name__)
 
-# Sicherheitsnetz gegen endloses Suchen (siehe run_react_loop).
+# Safety net against endless searching (see run_react_loop).
 MAX_TOOL_ROUNDS = 3
 
-# Max. gleichzeitig laufende LLM-Calls unter den parallelen Researchern.
+# Max. concurrently running LLM calls among the parallel researchers.
 _LLM_SEMAPHORE = asyncio.Semaphore(4)
 
 
 class Finding(TypedDict):
-    """Das Ergebnis EINES Researchers — Baustein für den Synthesizer."""
+    """The result of ONE researcher — building block for the synthesizer."""
 
     sub_question: str
     answer: str
 
 
 class ResearcherInput(TypedDict):
-    """Eingabe-State einer Researcher-Instanz (kommt im Send-Objekt mit)."""
+    """Input state of a researcher instance (arrives in the Send object)."""
 
     question: str
     sub_question: str
-    documents: list[dict]  # hochgeladene Dokumente (document_search-Tool)
+    documents: list[dict]  # uploaded documents (document_search tool)
 
 
 async def run_react_loop(
@@ -64,12 +65,12 @@ async def run_react_loop(
     extra_tools: list | None = None,
 ) -> tuple[str, list[Source], list[dict]]:
     """
-    Der handgebaute ReAct-Loop (Stufe 2 — unverändert bewährt):
+    The hand-built ReAct loop (Stage 2 — proven, unchanged):
 
-        LLM + Tool-Schema -> tool_calls? -> Suche ausführen ->
-        Treffer als ToolMessage zurück -> wiederholen -> finale Antwort.
+        LLM + tool schema -> tool_calls? -> run the search ->
+        hits back as a ToolMessage -> repeat -> final answer.
 
-    Gibt (Antworttext, gesammelte Quellen, Usage-Liste) zurück.
+    Returns (answer text, collected sources, usage list).
     """
     system = SystemMessage(
         "Du bist ein Recherche-Assistent. Nutze das web_search-Tool, um "
@@ -81,9 +82,9 @@ async def run_react_loop(
     )
     messages: list = [system, HumanMessage(content=query)]
 
-    # bind_tools hängt dem Request nur die JSON-Schemas der Tools an —
-    # ausgeführt werden sie im Loop unten von UNS. extra_tools: z. B.
-    # document_search (nur wenn der User Dokumente hochgeladen hat).
+    # bind_tools only attaches the tools' JSON schemas to the request —
+    # WE execute them ourselves in the loop below. extra_tools: e.g.
+    # document_search (only if the user uploaded documents).
     tools = [web_search] + (extra_tools or [])
     llm_with_tools = llm.bind_tools(tools)
     collected_sources: list[Source] = []
@@ -96,7 +97,7 @@ async def run_react_loop(
         usage.append(extract_usage(response))
 
         if not response.tool_calls:
-            # Kein Werkzeugwunsch mehr -> das ist die finale Antwort.
+            # No more tool requests -> this is the final answer.
             return str(response.content), collected_sources, usage
 
         logger.info("Recherche-Runde %d: %d Tool-Call(s)", round_no, len(response.tool_calls))
@@ -104,18 +105,18 @@ async def run_react_loop(
             query_arg = call.get("args", {}).get("query", "")
             emit("tool", tool=call.get("name", "?"), query=query_arg[:80], agent="researcher")
             if call.get("name") == "document_search":
-                # User-Dokument durchsuchen: Ergebnis als Kontext (nicht als
-                # webbasierte Quelle — es gibt keine URL zu verlinken).
+                # Search a user document: result as context (not as a
+                # web-based source — there is no URL to link to).
                 tool_obj = next(t for t in tools if getattr(t, "name", "") == "document_search")
                 doc_hits = await tool_obj.ainvoke({"query": query_arg})
                 messages.append(
                     ToolMessage(content=str(doc_hits), tool_call_id=call.get("id", ""))
                 )
                 continue
-            results = await search_web(query_arg)  # echte Ausführung
+            results = await search_web(query_arg)  # actual execution
             collected_sources.extend(results)
-            # Dem LLM die Treffer als ToolMessage zurückgeben (Referenz über
-            # tool_call_id — so weiß das Modell, zu welchem Call das gehört).
+            # Hand the hits back to the LLM as a ToolMessage (referenced via
+            # tool_call_id — that's how the model knows which call this belongs to).
             messages.append(
                 ToolMessage(
                     content=format_sources(results),
@@ -123,7 +124,7 @@ async def run_react_loop(
                 )
             )
 
-    # Cap erreicht: ohne Tools zur finalen Antwort zwingen.
+    # Cap reached: force a final answer without tools.
     logger.info("Max. Tool-Runden erreicht — finalisiere ohne weitere Suche.")
     async with _LLM_SEMAPHORE:
         final = await llm.ainvoke(messages)
@@ -133,10 +134,10 @@ async def run_react_loop(
 
 async def researcher_node(state: ResearcherInput, llm: BaseChatModel | None = None) -> dict:
     """
-    Eine Researcher-Instanz für EINE Sub-Frage.
+    One researcher instance for ONE sub-question.
 
-    Rückgabe NUR in Reducer-Kanälen: {'findings': [...], 'sources': [...]}
-    — genau deshalb können beliebig viele Instanzen parallel laufen.
+    Returns ONLY into reducer channels: {'findings': [...], 'sources': [...]}
+    — precisely why any number of instances can run in parallel.
     """
     sub_question = state["sub_question"]
     emit("node", node="researcher", status="start", sub_question=sub_question)

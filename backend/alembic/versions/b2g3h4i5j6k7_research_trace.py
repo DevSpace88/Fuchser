@@ -4,9 +4,9 @@ Revision ID: b2g3h4i5j6k7
 Revises: a1f2c3d4e5f6
 Create Date: 2026-08-29
 
-Stufe 5+: Ausführungs-Historie. Der Service zeichnet JEDES Agenten-Event
-(node start/end, Sub-Agent fertig, Phasen, done/error) mit Zeitstempel auf
-und persistiert es — die Basis für die Trace-Timeline im Sidepanel.
+Stage 5+: execution history. The service records EVERY agent event
+(node start/end, sub-agent finished, phases, done/error) with a timestamp
+and persists it — the basis for the trace timeline in the side panel.
 """
 
 from typing import Sequence, Union

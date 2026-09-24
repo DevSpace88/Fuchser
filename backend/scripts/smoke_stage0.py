@@ -1,19 +1,19 @@
 """
-scripts/smoke_stage0.py — Funktionsnachweis für Stufe 0 (siehe PLAN.md)
-=========================================================================
+scripts/smoke_stage0.py — Proof of function for Stage 0 (see PLAN.md)
+=====================================================================
 
-Beweist DREI Dinge:
-    1. Der Mini-Graph läuft (State → Node → Antwort).
-    2. Der AsyncPostgresSaver legt Checkpoints in UNSERER Postgres-DB ab
-       (Zeile in der Tabelle `checkpoints`).
-    3. Thread-Persistenz: ein zweiter Lauf auf derselben thread_id findet
-       den alten State wieder (History wächst).
+Proves THREE things:
+    1. The mini graph runs (state → node → answer).
+    2. The AsyncPostgresSaver stores checkpoints in OUR Postgres DB
+       (row in the `checkpoints` table).
+    3. Thread persistence: a second run on the same thread_id finds
+       the old state again (history grows).
 
-Ausführung (lokal, ohne Docker-Backend — DB läuft via docker compose):
+Invocation (locally, without the Docker backend — the DB runs via docker compose):
     POSTGRES_HOST=localhost uv run python scripts/smoke_stage0.py
 
-Ohne DEEPSEEK_API_KEY läuft der Node im Echo-Modus — der Checkpoint-
-Nachweis funktioniert trotzdem.
+Without DEEPSEEK_API_KEY the node runs in echo mode — the checkpoint
+proof still works.
 """
 
 import asyncio
@@ -21,8 +21,8 @@ import sys
 import uuid
 from pathlib import Path
 
-# Skript liegt in backend/scripts/ — backend/ ins sys.path nehmen, damit
-# `app.*` importierbar ist (wie beim Start via `uvicorn app.main:app`).
+# The script lives in backend/scripts/ — put backend/ on sys.path so that
+# `app.*` is importable (as when started via `uvicorn app.main:app`).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import asyncpg
@@ -33,8 +33,8 @@ from app.core.config import settings
 
 
 async def count_checkpoints(conn: asyncpg.Connection, thread_id: str) -> int:
-    # checkpoint_blobs enthält pro (thread_id, checkpoint) Einträge —
-    # DISTINCT über checkpoint_hs reicht als Existenz-Nachweis.
+    # checkpoint_blobs contains entries per (thread_id, checkpoint) —
+    # DISTINCT over checkpoint_hs suffices as proof of existence.
     return await conn.fetchval(
         "SELECT COUNT(DISTINCT checkpoint_id) FROM checkpoint_writes WHERE thread_id = $1",
         thread_id,
@@ -52,11 +52,11 @@ async def main() -> None:
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
 
-    # --- Lauf 1 ---
+    # --- Run 1 ---
     result = await graph.ainvoke({"question": "Was ist LangGraph?"}, config)
     print(f"\nAntwort (Lauf 1): {result['answer'][:120]}")
 
-    # --- Persistenz-Nachweis direkt in Postgres ---
+    # --- Persistence proof directly in Postgres ---
     conn = await asyncpg.connect(settings.agent_database_url)
     try:
         n = await count_checkpoints(conn, thread_id)

@@ -1,13 +1,13 @@
 # ============================================================================
-# Dockerfile für das Frontend (PRODUKTIONS-Build)
+# Dockerfile for the frontend (PRODUCTION build)
 # ============================================================================
-# Multi-Stage:
-#   1) "builder" — installiert deps + baut die Vite-App -> dist/
-#   2) "runner"  — nginx liefert dist/ aus UND proxied /api an das Backend.
+# Multi-stage:
+#   1) "builder" — installs deps + builds the Vite app -> dist/
+#   2) "runner"  — nginx serves dist/ AND proxies /api to the backend.
 #
-# Der /api-Proxy ersetzt den Vite-Dev-Proxy (vite.config.ts -> server.proxy).
-# Im Produktions-Compose erreicht dieser Container das Backend unter dem
-# Compose-Service-Namen "backend" auf Port 8000.
+# The /api proxy replaces the Vite dev proxy (vite.config.ts -> server.proxy).
+# In the production compose stack this container reaches the backend under the
+# Compose service name "backend" on port 8000.
 
 # ----------------------------------------------------------------------------
 # Stage 1: Builder
@@ -15,26 +15,26 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
-# Erst package-Dateien kopieren, dann installieren (besseres Docker-Caching).
+# First copy the package files, then install (better Docker caching).
 COPY package.json package-lock.json* ./
 RUN npm ci
 
-# Quellcode kopieren und bauen. Ergebnis liegt in /app/dist.
+# Copy the source code and build. The result lives in /app/dist.
 COPY . .
-# VITE_API_URL wird zur Build-Zeit eingebaut. In Produktion nutzen wir
-# relative /api-Pfade + den nginx-Proxy, daher bleibt sie leer.
+# VITE_API_URL is baked in at build time. In production we use
+# relative /api paths + the nginx proxy, so it stays empty.
 ENV VITE_API_URL=""
 RUN npm run build
 
 # ----------------------------------------------------------------------------
-# Stage 2: nginx — statische Dateien + /api-Reverse-Proxy zum Backend
+# Stage 2: nginx — static files + /api reverse proxy to the backend
 # ----------------------------------------------------------------------------
 FROM nginx:alpine AS runner
 
-# nginx-Konfiguration: SPA-Routing-Fallback (alle Pfade -> index.html)
-# + /api-Proxy zum Backend (Compose-Service "backend", Port 8000).
-# Der Proxy setzt Host/X-Forwarded-Header; path wird 1:1 durchgereicht
-# (ohne trailing slash), damit /api/v1/... unverändert beim Backend ankommt.
+# nginx configuration: SPA routing fallback (all paths -> index.html)
+# + /api proxy to the backend (Compose service "backend", port 8000).
+# The proxy sets Host/X-Forwarded headers; the path is passed through 1:1
+# (without a trailing slash) so /api/v1/... arrives at the backend unchanged.
 RUN printf 'server {\n\
     listen 80;\n\
     location /api/ {\n\
@@ -56,7 +56,7 @@ RUN printf 'server {\n\
     }\n\
 }\n' > /etc/nginx/conf.d/default.conf
 
-# Gebauten Code in den nginx-document-root kopieren.
+# Copy the built code into the nginx document root.
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80

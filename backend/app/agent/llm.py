@@ -1,29 +1,29 @@
 """
-agent/llm.py — LLM-Bindung für alle Agent-Nodes (DeepSeek oder Z.ai GLM)
+agent/llm.py — LLM binding for all agent nodes (DeepSeek or Z.ai GLM)
 ==========================================================================
 
-Zwei Provider, EINE Factory — ausgewählt über LLM_PROVIDER in der .env:
+Two providers, ONE factory — selected via LLM_PROVIDER in the .env:
 
-    deepseek (Standard)
+    deepseek (default)
         ChatDeepSeek -> https://api.deepseek.com (langchain-deepseek)
 
-    glm  (Z.ai "GLM Coding Plan", internationale API — NICHT bigmodel.cn)
-        ChatOpenAI mit base_url = https://api.z.ai/api/coding/paas/v4
-        (OpenAI-kompatibles Protokoll, siehe docs.z.ai/devpack/quick-start).
-        Aktuelle Coding-Plan-Modelle: glm-5.3, glm-5.3-flash.
+    glm  (Z.ai "GLM Coding Plan", international API — NOT bigmodel.cn)
+        ChatOpenAI with base_url = https://api.z.ai/api/coding/paas/v4
+        (OpenAI-compatible protocol, see docs.z.ai/devpack/quick-start).
+        Current coding-plan models: glm-5.3, glm-5.3-flash.
 
-Fallback-Kaskade: Ist der gewählte Provider ohne Key, wird der jeweils
-andere probiert; hat der auch keinen Key, liefern wir None -> Echo-Modus
-(App startet und bleibt testbar).
+Fallback cascade: if the selected provider has no key, the other one is
+tried; if that has no key either, we return None -> echo mode (the app
+starts anyway and stays testable).
 
-Hinweis: Laut Z.ai-Nutzungsbedingungen ist der Coding-Plan eigentlich für
-"officially supported tools" gedacht — für unser Lernprojekt ok, aber
-nicht als Blaupause für Produktion.
+Note: under the Z.ai terms of use, the coding plan is really meant for
+"officially supported tools" — fine for our learning project, but not
+as a blueprint for production.
 
-WARUM eine Factory statt direkter Instanziierung in den Nodes?
-    * EIN Ort für Modell/Key/Temperature (Konfiguration aus .env).
-    * Tests injizieren Fake-LLMs — deshalb nimmt build_*_graph() das
-      LLM auch als Parameter.
+WHY a factory instead of direct instantiation in the nodes?
+    * ONE place for model/key/temperature (configuration from .env).
+    * Tests inject fake LLMs — that's why build_*_graph() also takes
+      the LLM as a parameter.
 """
 
 import asyncio
@@ -43,26 +43,26 @@ def get_llm(
     streaming: bool = True,
 ) -> BaseChatModel | None:
     """
-    Liefert das Chat-Modell — oder None, wenn kein Provider-Key da ist.
+    Returns the chat model — or None if no provider key is available.
 
-    temperature=0.2: Recherche soll faktentreu sein, nur ein Hauch Variation.
-    streaming=True:   Token-Streaming für die Live-Ausgabe im Frontend.
+    temperature=0.2: research should be factually accurate, with just a hint of variation.
+    streaming=True:   token streaming for the live output in the frontend.
     """
     provider = settings.llm_provider
 
     if provider == "glm" and settings.glm_api_key:
         return _build_glm(temperature, streaming)
     if provider == "glm" and settings.deepseek_api_key:
-        # GLM gewählt, aber kein GLM-Key -> DeepSeek als Fallback.
+        # GLM selected, but no GLM key -> DeepSeek as fallback.
         return _build_deepseek(temperature, streaming)
 
     if provider == "deepseek" and settings.deepseek_api_key:
         return _build_deepseek(temperature, streaming)
     if settings.glm_api_key:
-        # DeepSeek gewählt, aber nur GLM-Key vorhanden -> GLM nehmen.
+        # DeepSeek selected, but only a GLM key present -> use GLM.
         return _build_glm(temperature, streaming)
 
-    return None  # Echo-Modus
+    return None  # echo mode
 
 
 def _build_deepseek(temperature: float, streaming: bool) -> ChatDeepSeek:
@@ -71,42 +71,42 @@ def _build_deepseek(temperature: float, streaming: bool) -> ChatDeepSeek:
         api_key=settings.deepseek_api_key,
         temperature=temperature,
         streaming=streaming,
-        # WICHTIG: Default ist 4096 — lange Reports werden mitten im Satz
-        # abgeschnitten ("hört einfach auf"). 8k ist deepseek-chats Maximum.
+        # IMPORTANT: the default is 4096 — long reports get cut off
+        # mid-sentence ("it just stops"). 8k is deepseek-chat's maximum.
         max_tokens=8192,
     )
 
 
 def _build_glm(temperature: float, streaming: bool) -> ChatOpenAI:
-    # ChatOpenAI ist der universelle Client für JEDE OpenAI-kompatible API —
-    # hier der Coding-Plan-Endpoint von Z.ai (Rest der Welt).
+    # ChatOpenAI is the universal client for EVERY OpenAI-compatible API —
+    # here, Z.ai's coding-plan endpoint (rest of the world).
     return ChatOpenAI(
         model=settings.glm_model,
         api_key=settings.glm_api_key,
         base_url=settings.glm_base_url,
         temperature=temperature,
         streaming=streaming,
-        max_tokens=8192,  # gleiche Abschneide-Falle wie bei DeepSeek
+        max_tokens=8192,  # same truncation trap as with DeepSeek
     )
 
 
 # ----------------------------------------------------------------------------
-# Retry-Wrapper: LLM-Calls mit exponentiellem Backoff wiederholen.
-# DeepSeek/GLM raten-limiten bei paralleler Last — statt leerer Antworten
-# (leerer content) oder Verbindungsabbrüchen crasht es dann sauber durch.
+# Retry wrapper: repeat LLM calls with exponential backoff.
+# DeepSeek/GLM rate-limit under parallel load — instead of empty responses
+# (empty content) or dropped connections, it then fails cleanly.
 # ----------------------------------------------------------------------------
 
 MAX_LLM_RETRIES = 4
-RETRY_BASE_DELAY = 10.0  # Sekunden, verdoppelt pro Versuch (10/20/40s)
-# DeepSeek-Rate-Limits sind aggressiv — kurze Delays reichen nicht.
+RETRY_BASE_DELAY = 10.0  # seconds, doubled per attempt (10/20/40s)
+# DeepSeek rate limits are aggressive — short delays are not enough.
 
 
 async def ainvoke_with_retry(llm, prompt, context: str = ""):
     """
-    Ruft llm.ainvoke auf und wiederholt bei:
-      * leerem content (Rate-Limit-Antwort)
-      * Exceptions (Verbindungsfehler)
-    Mit exponentiellem Backoff (2s, 4s, 8s).
+    Calls llm.ainvoke and retries on:
+      * empty content (rate-limit response)
+      * exceptions (connection errors)
+    With exponential backoff (2s, 4s, 8s).
     """
     last_error = None
     for attempt in range(1, MAX_LLM_RETRIES + 1):
@@ -115,7 +115,7 @@ async def ainvoke_with_retry(llm, prompt, context: str = ""):
             content = str(response.content).strip()
             if content:
                 return response
-            # Leere Antwort = oft Rate-Limit -> warten und erneut versuchen
+            # Empty response = often a rate limit -> wait and try again
             logger.warning(
                 "Leere LLM-Antwort (Versuch %d/%d)%s — warte %.0fs …",
                 attempt, MAX_LLM_RETRIES,
@@ -130,7 +130,7 @@ async def ainvoke_with_retry(llm, prompt, context: str = ""):
                 agent="system",
             )
             last_error = ValueError("Leere LLM-Antwort")
-        except Exception as e:  # noqa: BLE001 — Netzwerk/Rate-Limit
+        except Exception as e:  # noqa: BLE001 — network/rate limit
             logger.warning(
                 "LLM-Call fehlgeschlagen (Versuch %d/%d)%s: %s",
                 attempt, MAX_LLM_RETRIES,

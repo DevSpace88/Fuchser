@@ -1,9 +1,9 @@
 // ============================================================================
-// vite.config.ts — Konfiguration für den Vite-Dev-Server + Build
+// vite.config.ts — Configuration for the Vite dev server + build
 // ============================================================================
-// Vite ist unser Build-Tool: in Entwicklung startet es einen Dev-Server mit
-// Hot-Module-Replacement (Code-Änderungen erscheinen sofort im Browser),
-// in Produktion erzeugt es optimierte statische Dateien im dist/-Ordner.
+// Vite is our build tool: in development it starts a dev server with
+// hot module replacement (code changes show up in the browser immediately),
+// in production it produces optimized static files in the dist/ folder.
 
 import path from "node:path";
 import react from "@vitejs/plugin-react";
@@ -12,24 +12,24 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react()],
 
-  // ---- DEV-SERVER ----
-  // In Entwicklung läuft Vite auf Port 5173. Unser Backend läuft auf 8000.
-  // Eigentlich wären das zwei verschiedene "Origins" -> der Browser würde
-  // API-Calls blockieren (CORS). Es GIBT zwei Wege, das zu lösen:
+  // ---- DEV SERVER ----
+  // In development Vite runs on port 5173. Our backend runs on 8000.
+  // Strictly speaking those are two different "origins" -> the browser would
+  // block API calls (CORS). There ARE two ways to solve this:
   //
-  //   (a) CORS im Backend erlauben (siehe backend/app/main.py).
-  //   (b) Einen Vite-PROXY einrichten: der Browser ruft /api/* auf dem
-  //       VITE-Server auf (gleiche Origin!), und Vite leitet intern an den
-  //       Backend weiter. KEIN CORS nötig.
+  //   (a) Allow CORS in the backend (see backend/app/main.py).
+  //   (b) Set up a Vite PROXY: the browser calls /api/* on the
+  //       VITE server (same origin!), and Vite forwards internally to the
+  //       backend. NO CORS needed.
   //
-  // Wir nutzen BEIDES (CORS als Fallback, Proxy als Hauptweg). Der Proxy
-  // ist komfortabler, weil man sich um Tokens-Credentials etc. keine Gedanken
-  // machen muss.
+  // We use BOTH (CORS as a fallback, the proxy as the main path). The proxy
+  // is more convenient because you don't have to worry about
+  // tokens/credentials etc.
   server: {
-    host: true, // nötig, damit man aus dem Docker-Container den Host erreicht
+    host: true, // needed so the container can reach the host
     port: 5173,
     proxy: {
-      // Alle API-Aufrufe und den OAuth-Login ans Backend weiterleiten.
+      // Forward all API calls and the OAuth login to the backend.
       "/api": {
         target: process.env.VITE_DEV_BACKEND_URL || "http://localhost:8000",
         changeOrigin: true,
@@ -37,18 +37,18 @@ export default defineConfig({
     },
   },
 
-  // ---- Pfad-Alias ----
-  // Erlaubt `import { x } from "@/lib/..."` statt relativen Pfaden
-  // wie `../../lib/...`. "src" wird zu "@".
+  // ---- PATH ALIAS ----
+  // Allows `import { x } from "@/lib/..."` instead of relative paths
+  // like `../../lib/...`. "src" becomes "@".
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
   },
 
-  // ---- BUILD-OUTPUT ----
-  // Vite schreibt die gebauten Dateien nach "dist". Im Produktions-Setup
-  // kopieren wir dieses Verzeichnis ans Backend (siehe Dockerfile + main.py).
+  // ---- BUILD OUTPUT ----
+  // Vite writes the built files to "dist". In the production setup
+  // we copy this directory to the backend (see Dockerfile + main.py).
   build: {
     outDir: "dist",
   },

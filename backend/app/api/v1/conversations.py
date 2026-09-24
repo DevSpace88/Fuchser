@@ -1,8 +1,8 @@
 """
-api/v1/conversations.py — Unterhaltungs-Endpunkte (/api/v1/conversations/*)
-=============================================================================
-Die Historie des Chats: listet CONVERSATIONS (nicht einzelne Fragen).
-Nachfragen sind Nachrichten innerhalb einer Unterhaltung.
+api/v1/conversations.py — conversation endpoints (/api/v1/conversations/*)
+===========================================================================
+The chat history: lists CONVERSATIONS (not individual questions).
+Follow-up questions are messages within a conversation.
 """
 
 from uuid import UUID
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 @router.get("", response_model=list[ConversationOut])
 async def list_conversations(current_user: CurrentUserDep, session: SessionDep):
-    """Alle Unterhaltungen des Users (neueste zuerst)."""
+    """All of the user's conversations (newest first)."""
     return await conversation_service.list_conversations(session, current_user)
 
 
@@ -35,7 +35,7 @@ async def get_conversation(
     current_user: CurrentUserDep,
     session: SessionDep,
 ):
-    """Eine Unterhaltung inkl. aller Nachrichten (chronologisch)."""
+    """A conversation incl. all its messages (chronological)."""
     try:
         projects = await conversation_service.get_conversation_projects(
             session, current_user, conversation_id
@@ -64,7 +64,7 @@ async def delete_conversation_endpoint(
     current_user: CurrentUserDep,
     session: SessionDep,
 ):
-    """Löscht eine Unterhaltung inkl. aller Nachrichten und Dokumente."""
+    """Deletes a conversation incl. all its messages and documents."""
     try:
         await conversation_service.delete_conversation(session, current_user, conversation_id)
     except ConversationNotFound:
@@ -81,7 +81,7 @@ async def rename_conversation(
     current_user: CurrentUserDep,
     session: SessionDep,
 ):
-    """Unterhaltung umbenennen."""
+    """Rename a conversation."""
     try:
         conv = await conversation_service.rename_conversation(
             session, current_user, conversation_id, data.title

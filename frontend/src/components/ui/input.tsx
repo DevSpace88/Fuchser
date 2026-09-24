@@ -1,4 +1,4 @@
-// components/ui/input.tsx — shadcn/ui Input-Komponente (Textfeld).
+// components/ui/input.tsx — shadcn/ui Input component (text field).
 
 import * as React from "react";
 

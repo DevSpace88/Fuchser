@@ -1,9 +1,9 @@
 """
-services/conversation_service.py — Unterhaltungen (Chat-Modell wie Google AI Studio)
-====================================================================================
-Eine Conversation = ein Chat. Nachrichten (research_projects) hängen über
-conversation_id drin. Die Historie listet Conversations — Nachfragen sind
-Nachrichten im Chat, keine eigenen Einträge.
+services/conversation_service.py — conversations (chat model like Google AI Studio)
+===================================================================================
+A conversation = a chat. Messages (research_projects) hang off it via
+conversation_id. The history lists conversations — follow-up questions are
+messages within the chat, not separate entries.
 """
 
 from uuid import UUID
@@ -17,7 +17,7 @@ from app.models.user import User
 
 
 class ConversationNotFound(Exception):
-    """Unterhaltung existiert nicht — oder gehört einem anderen User."""
+    """Conversation does not exist — or belongs to another user."""
 
 
 def _owned(conv: Conversation, user: User) -> bool:
@@ -33,7 +33,7 @@ async def create_conversation(session: AsyncSession, user: User, title: str) -> 
 
 
 async def list_conversations(session: AsyncSession, user: User) -> list[dict]:
-    """Alle Unterhaltungen des Users (neueste zuerst) mit Nachrichtenzahl."""
+    """All of the user's conversations (newest first) with message count."""
     result = await session.exec(
         select(Conversation)
         .where(Conversation.user_id == user.id)
@@ -65,7 +65,7 @@ async def list_conversations(session: AsyncSession, user: User) -> list[dict]:
 async def get_conversation_projects(
     session: AsyncSession, user: User, conversation_id: UUID
 ) -> list[ResearchProject]:
-    """Alle Nachrichten einer Unterhaltung (chronologisch)."""
+    """All messages of a conversation (chronological)."""
     conv = await session.get(Conversation, conversation_id)
     if conv is None or not _owned(conv, user):
         raise ConversationNotFound(str(conversation_id))
@@ -91,14 +91,14 @@ async def rename_conversation(
 
 
 async def delete_conversation(session: AsyncSession, user: User, conversation_id: UUID) -> None:
-    """Löscht eine Unterhaltung inkl. ALLER Nachrichten (research_projects)
-    und deren Dokumente — beides per DB-CASCADE."""
+    """Deletes a conversation including ALL of its messages (research_projects)
+    and their documents — both via DB CASCADE."""
     conv = await session.get(Conversation, conversation_id)
     if conv is None or not _owned(conv, user):
         raise ConversationNotFound(str(conversation_id))
 
-    # Explizit löschen (statt auf DB-CASCADE zu vertrauen): SQLite (Tests)
-    # erzwingt FK-Cascades nicht — so ist es auf JEDER DB deterministisch.
+    # Delete explicitly (instead of trusting DB CASCADE): SQLite (tests)
+    # does not enforce FK cascades — this way it is deterministic on EVERY DB.
     from app.models.document import Document
 
     projects = list(

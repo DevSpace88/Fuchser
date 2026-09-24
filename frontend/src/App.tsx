@@ -1,8 +1,8 @@
-// App.tsx — definiert die Routen der SPA.
+// App.tsx — defines the routes of the SPA.
 //
-// React Router entscheidet anhand der URL, welche Komponente angezeigt wird.
-// Die "Protected"-Routes sind NUR für eingeloggte User sichtbar (bzw. für
-// Admins) — siehe Komponenten <RequireAuth> / <RequireAdmin> unten.
+// React Router decides, based on the URL, which component is displayed.
+// The "Protected" routes are visible ONLY to logged-in users (or admins,
+// respectively) — see the <RequireAuth> / <RequireAdmin> components below.
 
 import { useState, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -21,14 +21,14 @@ import { Button } from "@/components/ui/button";
 import { FoxIcon } from "@/components/FoxIcon";
 
 // ----------------------------------------------------------------------------
-// SCHUTZ-WRAPPER: leitet nicht-eingeloggte User auf /login um.
+// SCHUTZ-WRAPPER (protection wrapper): redirects non-logged-in users to /login.
 // ----------------------------------------------------------------------------
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
-  // Solange wir noch prüfen, ob der User eingeloggt ist: Spinner rendern
-  // (verhindert Flackern von "Login" -> "Dashboard").
+  // While we are still checking whether the user is logged in: render a
+  // spinner (prevents flickering from "Login" -> "Dashboard").
   if (loading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
@@ -37,16 +37,16 @@ function RequireAuth({ children }: { children: ReactNode }) {
     );
   }
 
-  // Nicht eingeloggt? Zur Login-Seite, aber wir merken uns, wohin der User
-  // wollte (location), damit wir ihn nach dem Login dorthin weiterschicken.
+  // Not logged in? Go to the login page, but we remember where the user
+  // wanted to go (location) so we can forward them there after login.
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
 
   return <>{children}</>;
 }
 
 // ----------------------------------------------------------------------------
-// GAST-WRAPPER: leitet bereits eingeloggte User direkt aufs /dashboard um.
-// (z. B. für /login und /register)
+// GAST-WRAPPER (guest wrapper): redirects already-logged-in users straight to /dashboard.
+// (e.g. for /login and /register)
 // ----------------------------------------------------------------------------
 function RequireGuest({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -64,7 +64,7 @@ function RequireGuest({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-// Noch strenger: nur für Admins.
+// Even stricter: admins only.
 function RequireAdmin({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) {
@@ -87,7 +87,7 @@ function RequireAdmin({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 // ----------------------------------------------------------------------------
-// Header (nur sichtbar, wenn eingeloggt).
+// Header (only visible when logged in).
 // ----------------------------------------------------------------------------
 function Header() {
   const { user, logout } = useAuth();
@@ -246,7 +246,7 @@ function Header() {
 }
 
 // ----------------------------------------------------------------------------
-// Routen-Definition.
+// Route definitions.
 // ----------------------------------------------------------------------------
 export default function App() {
   const { user, loading } = useAuth();
@@ -310,7 +310,7 @@ export default function App() {
             </RequireAdmin>
           }
         />
-        {/* Landingpage für Gäste; eingeloggte User landen direkt im Dashboard. */}
+        {/* Landing page for guests; logged-in users go straight to the dashboard. */}
         <Route
           path="/"
           element={

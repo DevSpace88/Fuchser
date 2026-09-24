@@ -4,9 +4,9 @@ Revision ID: e5j6k7l8m9n0
 Revises: d4i5j6k7l8m9
 Create Date: 2026-08-29
 
-Dokumenten-Upload (User-Wunsch): Hochgeladene Dateien (PDF/DOCX/TXT/MD/CSV)
-werden beim Upload text-extrahiert und pro Recherche gespeichert. Der
-Researcher-Agent kann sie via document_search-Tool durchsuchen.
+Document upload (user request): uploaded files (PDF/DOCX/TXT/MD/CSV)
+are text-extracted on upload and stored per research. The researcher
+agent can search them via the document_search tool.
 """
 
 from typing import Sequence, Union

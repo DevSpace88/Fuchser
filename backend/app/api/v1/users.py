@@ -1,17 +1,17 @@
 """
-api/v1/users.py — User-Verwaltung (/api/v1/users/*)
+api/v1/users.py — user management (/api/v1/users/*)
 ====================================================
 
-Dieser Router demonstriert AUTORISIERUNG im Gegensatz zur bloßen
-Authentifizierung.
+This router demonstrates AUTHORIZATION as opposed to mere
+authentication.
 
-Endpunkte:
-  GET /users         -> Liste aller User (NUR ADMIN)
-  GET /users/{id}    -> einzelner User (NUR ADMIN)
+Endpoints:
+  GET /users         -> list of all users (ADMIN ONLY)
+  GET /users/{id}    -> single user (ADMIN ONLY)
 
-Vergleich zu /auth/me (in auth.py):
-  /auth/me nutzt CurrentUserDep  -> jeder eingeloggte User darf.
-  /users   nutzt RequireAdmin    -> nur eingeloggte User mit Rolle ADMIN.
+Comparison with /auth/me (in auth.py):
+  /auth/me uses CurrentUserDep  -> any logged-in user may access it.
+  /users   uses RequireAdmin    -> only logged-in users with the ADMIN role.
 """
 
 from uuid import UUID
@@ -28,43 +28,43 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 # ----------------------------------------------------------------------------
-# GET /users — alle User auflisten (NUR ADMIN)
+# GET /users — list all users (ADMIN ONLY)
 # ----------------------------------------------------------------------------
-# `dependencies=[RequireAdmin]` ist der entscheidende Punkt:
-# Bevor dieser Endpunkt läuft, führt FastAPI RequireAdmin = Depends(get_current_admin_user)
-# aus. Das prüft: Token gültig? User aktiv? Rolle == ADMIN?
-# Schlägt etwas fehl, bekommt der Client 401/403 — der Code hier läuft nie.
+# `dependencies=[RequireAdmin]` is the crucial point:
+# Before this endpoint runs, FastAPI executes RequireAdmin = Depends(get_current_admin_user).
+# That checks: token valid? user active? role == ADMIN?
+# If anything fails, the client gets 401/403 — the code here never runs.
 #
-# Man kann die Dependency auch als PARAMETER injizieren lassen, wenn man den
-# User im Endpunkt braucht (z. B. um "nur die eigenen Daten" zu filtern):
+# You can also have the dependency injected as a PARAMETER if you need the
+# user inside the endpoint (e.g. to filter for "own data only"):
 #   async def list_users(session: SessionDep, _: CurrentUserDep): ...
-# Da wir hier den User nicht brauchen, reicht `dependencies=[...]`.
+# Since we do not need the user here, `dependencies=[...]` is enough.
 @router.get("", response_model=list[UserRead], dependencies=[RequireAdmin])
 async def list_users(session: SessionDep):
     """
-    Gibt alle registrierten User zurück. ADMIN-ONLY.
+    Returns all registered users. ADMIN ONLY.
 
-    select(User) entspricht `SELECT * FROM users`. `exec(...).all()` liefert
-    eine Liste. Wir geben UserRead zurück (response_model), sodass Passwörter
-    automatisch weggefiltert werden.
+    select(User) corresponds to `SELECT * FROM users`. `exec(...).all()`
+    returns a list. We return UserRead (response_model) so that passwords
+    are filtered out automatically.
     """
     users = (await session.exec(select(User).order_by(User.created_at.desc()))).all()
     return users
 
 
 # ----------------------------------------------------------------------------
-# GET /users/{user_id} — einzelner User (NUR ADMIN)
+# GET /users/{user_id} — single user (ADMIN ONLY)
 # ----------------------------------------------------------------------------
 @router.get("/{user_id}", response_model=UserRead, dependencies=[RequireAdmin])
 async def get_user(user_id: UUID, session: SessionDep):
     """
-    Gibt einen User anhand seiner UUID zurück. ADMIN-ONLY.
+    Returns a user by UUID. ADMIN ONLY.
 
-    session.get(User, id) ist der ORM-Weg für `SELECT ... WHERE id = ?`.
+    session.get(User, id) is the ORM way of doing `SELECT ... WHERE id = ?`.
     """
     user = await session.get(User, user_id)
     if user is None:
-        # 404 = Not Found. Sauberer als 400, weil die Ressource wirklich fehlt.
+        # 404 = Not Found. Cleaner than 400 because the resource really is missing.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User nicht gefunden.",

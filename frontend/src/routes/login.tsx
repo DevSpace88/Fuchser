@@ -1,5 +1,5 @@
-// routes/login.tsx — Login-Seite.
-// Demonstriert den typischen Flow: Formular -> useAuth().login -> Redirect.
+// routes/login.tsx — login page.
+// Demonstrates the typical flow: form -> useAuth().login -> redirect.
 
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate, Link } from "react-router-dom";
@@ -15,14 +15,14 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Bereits eingeloggt? Dann hat die Login-Seite keinen Sinn — direkt
-  // weiter zum Dashboard (User-Feedback: kein sinnloses Login-Formular).
+  // Already logged in? Then the login page makes no sense — go straight
+  // to the dashboard (user feedback: no pointless login form).
   if (!loading && user) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  // Falls wir von einer "protected" Seite hierher geleitet wurden, wollen wir
-  // nach erfolgreichen Login genau DAHIN zurück. Sonst -> /dashboard.
+  // If we were led here from a "protected" page, we want to go back exactly
+  // THERE after a successful login. Otherwise -> /dashboard.
   const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? "/dashboard";
 
   const [email, setEmail] = useState("");

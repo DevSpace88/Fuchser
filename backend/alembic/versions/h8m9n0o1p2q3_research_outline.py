@@ -4,8 +4,8 @@ Revision ID: h8m9n0o1p2q3
 Revises: g7l8m9n0o1p2
 Create Date: 2026-08-29
 
-Persistiert die Deep-Report-Gliederung, damit sie Seiten-Reloads überlebt
-und die Freigabe-UI (Stage 3) auch nach Neuladen angezeigt werden kann.
+Persists the deep-report outline so that it survives page reloads
+and the approval UI (Stage 3) can be shown even after a reload.
 """
 
 from typing import Sequence, Union

@@ -1,7 +1,7 @@
-// routes/dashboard.tsx — Deine Übersicht: Statistiken + letzte Unterhaltungen.
+// routes/dashboard.tsx — your overview: statistics + recent conversations.
 // ============================================================================
-// Konsistent mit der Historie: Das Dashboard zeigt CONVERSATIONS (Chats),
-// nicht einzelne Fragen — dieselbe Einheit wie überall sonst.
+// Consistent with the history page: the dashboard shows CONVERSATIONS (chats),
+// not individual questions — the same unit as everywhere else.
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -66,7 +66,7 @@ export function DashboardPage() {
         </Button>
       </div>
 
-      {/* Statistik */}
+      {/* Statistics */}
       <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           icon={MessageSquare}
@@ -94,7 +94,7 @@ export function DashboardPage() {
         />
       </div>
 
-      {/* Letzte Unterhaltungen */}
+      {/* Recent conversations */}
       <div className="mt-10">
         <h2 className="text-lg font-semibold tracking-tight">Deine letzten Unterhaltungen</h2>
         <div className="mt-4 grid gap-3">

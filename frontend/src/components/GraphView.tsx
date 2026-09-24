@@ -1,14 +1,14 @@
 // ============================================================================
-// GraphView.tsx — Live-Visualisierung des Agent-Graphen (Stufe 4, PLAN.md)
+// GraphView.tsx — live visualization of the agent graph (level 4, PLAN.md)
 // ============================================================================
 //
-// Statisch gezeichnete Nodes (Supervisor → Researcher → Synthesizer →
-// Critic → END) mit Highlighting per SSE-node-Events: Der aktive Node
-// leuchtet, erledigte sind grün markiert. Bewusst KEIN dynamisches Layout —
-// unsere Graph-Struktur ist fix, nur der Zustand ändert sich.
+// Statically drawn nodes (Supervisor → Researcher → Synthesizer →
+// Critic → END) with highlighting via SSE node events: the active node
+// glows, completed ones are marked green. Deliberately NO dynamic layout —
+// our graph structure is fixed, only the state changes.
 //
-// Technisch: @xyflow/react (react-flow). Interaktionen sind aus, damit die
-// Ansicht wie ein Diagramm und nicht wie eine Karte wirkt.
+// Technically: @xyflow/react (react-flow). Interactions are off so the
+// view works like a diagram, not like a map.
 
 import { useMemo } from "react";
 import {
@@ -21,16 +21,16 @@ import {
 import "@xyflow/react/dist/style.css";
 
 export interface GraphViewProps {
-  /** Node-ID, die gerade läuft ("supervisor" | "researcher" | "synthesizer" | "critic"). */
+  /** Node ID that is currently running ("supervisor" | "researcher" | "synthesizer" | "critic"). */
   activeNode: string | null;
-  /** Bereits abgeschlossene Node-IDs. */
+  /** Node IDs that are already completed. */
   doneNodes: string[];
-  /** Wie viele Researcher-Instanzen gerade laufen (Badge am Researcher-Node). */
+  /** How many researcher instances are currently running (badge on the researcher node). */
   runningResearchers?: number;
   height?: number;
 }
 
-// Layout: feste Positionen — das Diagramm soll wie im PLAN.md aussehen.
+// Layout: fixed positions — the diagram should look like it does in PLAN.md.
 const NODE_DEFS: { id: string; label: string; x: number; y: number }[] = [
   { id: "supervisor", label: "🧠 Supervisor", x: 0, y: 0 },
   { id: "researcher", label: "🔎 Researcher", x: 240, y: 0 },

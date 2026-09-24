@@ -1,19 +1,19 @@
 """
-nodes/critic.py — DER KRITIKER (Stufe 4): Qualitäts-Gate mit Lücken-Loop
+nodes/critic.py — THE CRITIC (Stage 4): quality gate with a gap loop
 =========================================================================
 
-Der Kritiker bewertet den Report: Beantwortet er die Forschungsfrage
-vollständig? Zwei mögliche Urteile (wie beim Supervisor: prompt-basiertes
-JSON + Pydantic-Validierung — GLM-sicher, siehe supervisor.py):
+The critic evaluates the report: does it answer the research question
+completely? Two possible verdicts (like the supervisor: prompt-based
+JSON + Pydantic validation — GLM-safe, see supervisor.py):
 
-    {"verdict": "ok"}                              -> Graph endet.
-    {"verdict": "gaps", "gaps": ["…", "…"]}        -> Lücken! Die route
-       nach dem Kritiker startet Researcher NUR für die Lücken-Fragen,
-       der Synthesizer schreibt eine überarbeitete Version — max.
-       MAX_REVISIONS Mal, sonst wird abgebrochen (Endlosschleifen-Schutz).
+    {"verdict": "ok"}                              -> graph ends.
+    {"verdict": "gaps", "gaps": ["…", "…"]}        -> gaps! The route
+       after the critic starts researchers ONLY for the gap questions,
+       the synthesizer writes a revised version — at most
+       MAX_REVISIONS times, otherwise it aborts (endless-loop protection).
 
-Das ist DER Showcase für conditional edges mit Loop — der Grund, warum
-das Ding "Graph" und nicht "Pipeline" heißt.
+This is THE showcase for conditional edges with a loop — the reason
+this thing is called a "graph" and not a "pipeline".
 """
 
 import logging
@@ -30,18 +30,18 @@ from app.agent.usage import extract_usage
 
 logger = logging.getLogger(__name__)
 
-# Wie viele Überarbeitungsrunden darf der Kritiker maximal auslösen?
+# How many revision rounds may the critic trigger at most?
 MAX_REVISIONS = 2
-# Pro Runde höchstens so viele Lücken-Fragen nachlegen:
+# At most this many gap questions added per round:
 MAX_GAPS = 2
 
-# Report-Kürzung für den Prompt (Tokens sparen — der Kritiker braucht
-# kein Wort für Wort, nur Struktur + Abdeckung).
+# Report truncation for the prompt (saving tokens — the critic doesn't
+# need it word for word, just structure + coverage).
 _REPORT_PREVIEW_CHARS = 6000
 
 
 class Critique(BaseModel):
-    """Bewertung des Reports durch den Kritiker."""
+    """Evaluation of the report by the critic."""
 
     verdict: Literal["ok", "gaps"]
     gaps: list[str] = Field(
@@ -64,7 +64,7 @@ _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
 
 def parse_critique(text: str) -> Critique | None:
-    """Extrahiert/validiert die Bewertung (analog parse_plan im Supervisor)."""
+    """Extracts/validates the evaluation (analogous to parse_plan in the supervisor)."""
     match = _JSON_BLOCK.search(text)
     if match is None:
         return None
@@ -77,11 +77,11 @@ def parse_critique(text: str) -> Critique | None:
 
 async def critic_node(state: dict, llm: BaseChatModel | None = None) -> dict:
     """
-    Bewertet den Report → {'critique': {...}} (+ revision_count bei Lücken).
+    Evaluates the report → {'critique': {...}} (+ revision_count on gaps).
 
-    revision_count wird NUR bei verdict=gaps erhöht — die Route danach
-    entscheidet anhand des Zählers, ob noch eine Runde läuft (<= Cap)
-    oder hart beendet wird.
+    revision_count is only incremented on verdict=gaps — the route
+    afterwards decides from the counter whether another round runs
+    (<= cap) or whether things end hard.
     """
     emit("node", node="critic", status="start")
 
@@ -94,7 +94,7 @@ async def critic_node(state: dict, llm: BaseChatModel | None = None) -> dict:
     usage: list[dict] = []
 
     if model is None:
-        critique = Critique(verdict="ok")  # Echo-Modus: immer zufrieden
+        critique = Critique(verdict="ok")  # echo mode: always satisfied
     else:
         try:
             response = await model.ainvoke(
@@ -110,18 +110,18 @@ async def critic_node(state: dict, llm: BaseChatModel | None = None) -> dict:
             )
             critique = parse_critique(str(response.content))
             usage.append(extract_usage(response))
-        except Exception:  # noqa: BLE001 — Provider-Fehler -> ok (nicht blocken)
+        except Exception:  # noqa: BLE001 — provider error -> ok (don't block)
             logger.warning("Kritiker-Call fehlgeschlagen — bewerte als ok", exc_info=True)
 
     if critique is None or critique.verdict not in ("ok", "gaps"):
-        critique = Critique(verdict="ok")  # unlesbar -> nicht blocken
+        critique = Critique(verdict="ok")  # unreadable -> don't block
 
     new_revision_count = revision_count
     if critique.verdict == "gaps":
-        # Lücken plausibel machen (Cap + leere Strings raus).
+        # Sanitize the gaps (cap + drop empty strings).
         critique.gaps = [g.strip() for g in critique.gaps if g.strip()][:MAX_GAPS]
         if not critique.gaps:
-            critique.verdict = "ok"  # "Lücken" ohne Lücken-Fragen zählt nicht
+            critique.verdict = "ok"  # "gaps" without gap questions doesn't count
         else:
             new_revision_count = revision_count + 1
 

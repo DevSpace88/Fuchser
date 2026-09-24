@@ -1,13 +1,13 @@
 """
-tests/test_language.py — Sprach-Lektor (agent/language.py)
-===========================================================
+tests/test_language.py — Language editor (agent/language.py)
+============================================================
 
-Abgedeckt:
-  * Fremde Schriftzeichen (Chinesisch/Kyrillisch) werden per Regex erkannt.
-  * Sauberer deutscher Text + NO-Antwort => KEIN Korrektur-Call (Token-schlau).
-  * YES-Antwort => Korrektur-Call läuft und ersetzt den Text.
-  * Chinesische Zeichen => Korrektur wird ERZWUNGEN (ohne Vorab-Check).
-  * Leere/abgestürzte Korrektur => Original bleibt erhalten (Sicherheitsnetz).
+Covered:
+  * Foreign script characters (Chinese/Cyrillic) are detected via regex.
+  * Clean German text + NO answer => NO correction call (token-savvy).
+  * YES answer => the correction call runs and replaces the text.
+  * Chinese characters => correction is FORCED (without a pre-check).
+  * Empty/crashed correction => the original is kept (safety net).
 """
 
 import pytest
@@ -25,7 +25,7 @@ def test_has_foreign_script():
 
 
 class LektorFakeLLM:
-    """Beantwortet Sprach-Check (YES/NO) und Lektor-Prompts testbar."""
+    """Answers the language check (YES/NO) and editor prompts in a testable way."""
 
     def __init__(self, check_answer: str = "NO", polish_answer: str | None = None):
         self.check_answer = check_answer
@@ -44,12 +44,12 @@ class LektorFakeLLM:
 
 @pytest.mark.asyncio
 async def test_polish_clean_text_no_extra_call():
-    """Sauberes Kapitel + NO => nur der Mini-Check, keine teure Korrektur."""
+    """Clean chapter + NO => only the mini check, no expensive correction."""
     llm = LektorFakeLLM(check_answer="NO")
     text = "Der Wohnungsmarkt in Brandenburg wächst stabil seit 2020 [1]."
     out, usage = await polish_german(llm, text, "Kapitel 1: Test")
     assert out == text
-    assert len(usage) == 1  # nur der Check
+    assert len(usage) == 1  # only the check
     assert any("YES oder NO" in c for c in llm.calls)
     assert not any("Lektor für deutsche Fachtexte" in c for c in llm.calls)
 
@@ -59,23 +59,23 @@ async def test_polish_yes_triggers_correction():
     llm = LektorFakeLLM(check_answer="YES", polish_answer="Korrigierter deutscher Text [1].")
     out, usage = await polish_german(llm, "Der Wohnungsmarkt downgeregelt [1].", "Kapitel 1")
     assert out == "Korrigierter deutscher Text [1]."
-    assert len(usage) == 2  # Check + Korrektur
+    assert len(usage) == 2  # check + correction
     assert any("Lektor" in c for c in llm.calls)
 
 
 @pytest.mark.asyncio
 async def test_polish_chinese_forces_correction_without_check():
-    """Chinesische Zeichen => Korrektur sofort (kein YES/NO-Vorab-Check)."""
+    """Chinese characters => correction immediately (no YES/NO pre-check)."""
     llm = LektorFakeLLM(polish_answer="Übersetzter deutscher Text [1].")
     out, usage = await polish_german(llm, "半分のデータ zeigt den Trend [1].", "Kapitel 2")
     assert out == "Übersetzter deutscher Text [1]."
-    assert not any("YES oder NO" in c for c in llm.calls)  # Check übersprungen
+    assert not any("YES oder NO" in c for c in llm.calls)  # check skipped
     assert any("Lektor" in c for c in llm.calls)
 
 
 @pytest.mark.asyncio
 async def test_polish_empty_correction_falls_back_to_original(monkeypatch):
-    # Retries abschalten, damit der Test nicht in Backoff-Sleeps läuft.
+    # Disable retries so the test does not end up in backoff sleeps.
     import app.agent.llm as llm_mod
 
     monkeypatch.setattr(llm_mod, "MAX_LLM_RETRIES", 1)
@@ -84,7 +84,7 @@ async def test_polish_empty_correction_falls_back_to_original(monkeypatch):
     llm = LektorFakeLLM(polish_answer="")
     original = "半分 der Text bleibt [1]." + " filler " * 50
     out, _usage = await polish_german(llm, original, "Kapitel 3")
-    assert out == original  # Original bleibt — Lektor zerstört nie ein Kapitel
+    assert out == original  # the original stays — the editor never destroys a chapter
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-// PostCSS lädt Tailwind (CSS-Framework) + Autoprefixer (vendor-präfixe).
+// PostCSS loads Tailwind (CSS framework) + Autoprefixer (vendor prefixes).
 export default {
   plugins: {
     tailwindcss: {},

@@ -1,21 +1,21 @@
 """
-models/research_project.py — Tabelle "research_projects" (Stufe 1, PLAN.md)
-=============================================================================
+models/research_project.py — table "research_projects" (stage 1, PLAN.md)
+=========================================================================
 
-Ein Recherche-Projekt = die Frage eines Users + der Zustand seines
-LangGraph-Laufs. Das Model ist die Brücke zwischen zwei Welten:
+A research project = a user's question + the state of their LangGraph run.
+The model is the bridge between two worlds:
 
-    users (SQLModel, klassisch)  <->  LangGraph-Threads (Checkpointer)
+    users (SQLModel, classic)  <->  LangGraph threads (checkpointer)
 
-  * user_id:   WEM gehört die Recherche? (Ownership-Checks im Service)
-  * thread_id: Unter welchem LangGraph-Thread liegt der Graph-State?
-               Der Checkpointer speichert den State zu genau dieser ID —
-               darüber findet später auch eine Follow-up-Frage den Kontext.
+  * user_id:   WHO does the research belong to? (ownership checks in the service)
+  * thread_id: Under which LangGraph thread does the graph state live?
+               The checkpointer stores the state under exactly this ID —
+               this is how a follow-up question later finds the context too.
 
-status ist ein simpler VARCHAR (kein Postgres-Enum): Die Status-Werte ändern sich mit
-jedem Stufen-Ausbau (queued → planning → researching → ...), ein Enum-Typ in
-der DB wäre bei jeder Erweiterung eine eigene Migration. Lern-Projekt =
-bewusst einfacher Weg.
+status is a plain VARCHAR (not a Postgres enum): the status values change with
+every stage expansion (queued → planning → researching → ...), and an enum type
+in the DB would require its own migration on every extension. Learning
+project = deliberately taking the simpler route.
 """
 
 import enum
@@ -29,16 +29,16 @@ from app.models.base import TimestampMixin
 
 
 class ResearchStatus(enum.StrEnum):
-    """Lebenszyklus einer Recherche (wächst mit den Stufen)."""
+    """Lifecycle of a research run (grows with the stages)."""
 
-    QUEUED = "queued"  # angelegt, Graph lief noch nie
-    RUNNING = "running"  # Graph läuft gerade (SSE-Stream offen)
-    DONE = "done"  # Report fertig
-    ERROR = "error"  # Lauf gescheitert (error-Feld enthält Grund)
+    QUEUED = "queued"  # created, the graph has never run
+    RUNNING = "running"  # the graph is currently running (SSE stream open)
+    DONE = "done"  # report finished
+    ERROR = "error"  # run failed (the error field contains the reason)
 
 
 class ResearchProject(TimestampMixin, SQLModel, table=True):
-    """Tabelle "research_projects" — eine Recherche eines Users."""
+    """Table "research_projects" — one research run belonging to a user."""
 
     __tablename__ = "research_projects"
 
@@ -49,9 +49,9 @@ class ResearchProject(TimestampMixin, SQLModel, table=True):
         nullable=False,
     )
 
-    # Ownership: FK auf users. Jede Query filtert nach user_id (siehe Service)
-    # — fremde Projekte sind nach außen unsichtbar (404, nicht 403: keine
-    # Information über fremde IDs preisgeben).
+    # Ownership: FK to users. Every query filters by user_id (see the service)
+    # — other people's projects are invisible from the outside (404, not 403:
+    # do not disclose any information about foreign IDs).
     user_id: uuid.UUID = Field(
         foreign_key="users.id",
         index=True,
@@ -59,24 +59,24 @@ class ResearchProject(TimestampMixin, SQLModel, table=True):
         ondelete="CASCADE",
     )
 
-    # LangGraph-Thread-ID: verbindet das Projekt mit seinen Checkpoints.
-    # Eigener UUID statt Projekt-ID, damit man später mehrere Läufe (z. B.
-    # Follow-ups oder Re-Plannung) sauber trennen kann.
+    # LangGraph thread ID: connects the project to its checkpoints.
+    # A separate UUID instead of the project ID, so that later multiple runs
+    # (e.g. follow-ups or re-planning) can be kept cleanly separate.
     thread_id: uuid.UUID = Field(
         default_factory=uuid.uuid4,
         index=True,
         nullable=False,
     )
 
-    # Die Forschungsfrage des Users (Text für lange Fragen/Texteingaben).
+    # The user's research question (Text for long questions / text input).
     question: str = Field(sa_column=Column(sa.Text, nullable=False))
 
-    # Benutzerdefinierter Anzeigename ("Titel der Unterhaltung") — steuert
-    # Listenanzeige und PDF-Titel. NULL -> die Frage wird angezeigt.
-    # Die Frage selbst bleibt unangetastet (Kontext für Follow-ups!).
+    # User-defined display name ("title of the conversation") — controls the
+    # list display and the PDF title. NULL -> the question is shown.
+    # The question itself stays untouched (context for follow-ups!).
     title: str | None = Field(default=None, max_length=200)
 
-    # Aktueller Zustand (siehe ResearchStatus).
+    # Current state (see ResearchStatus).
     status: str = Field(
         default=ResearchStatus.QUEUED.value,
         max_length=32,
@@ -84,21 +84,21 @@ class ResearchProject(TimestampMixin, SQLModel, table=True):
         nullable=False,
     )
 
-    # Der fertige Report (Markdown). NULL solange kein Lauf fertig ist.
+    # The finished report (Markdown). NULL as long as no run has finished.
     report: str | None = Field(default=None)
 
-    # Deep-Report-Gliederung (Stage 3): wird nach der Planung persistiert,
-    # damit sie Reloads überlebt und freigegeben werden kann.
+    # Deep report outline (stage 3): persisted after planning, so that it
+    # survives reloads and can be released.
     outline: dict | None = Field(default=None, sa_column=Column(sa.JSON, nullable=True))
 
-    # Fertig geschriebene Deep-Report-Kapitel: [{title, content}]. Wird
-    # INKREMENTELL persistiert (nach jedem Kapitel), damit ein Abbruch
-    # (Rate-Limit / leere LLM-Antwort) die bereits geschriebenen Kapitel
-    # NICHT verliert und ein Resume sie überspringen kann.
+    # Fully written deep report chapters: [{title, content}]. Persisted
+    # INCREMENTALLY (after each chapter), so that an abort (rate limit /
+    # empty LLM response) does NOT lose the chapters already written and a
+    # resume can skip them.
     chapters: list | None = Field(default=None, sa_column=Column(sa.JSON, nullable=True))
 
-    # Phase 2 "Deep Reports": "quick" (Standard) oder "deep" (Outline →
-    # Kapitel-Recherche → lange Kapitel → Assembly mit Literaturverzeichnis).
+    # Phase 2 "deep reports": "quick" (default) or "deep" (outline →
+    # chapter research → long chapters → assembly with bibliography).
     depth: str = Field(
         default="quick",
         max_length=16,
@@ -106,15 +106,15 @@ class ResearchProject(TimestampMixin, SQLModel, table=True):
             sa.String(16), nullable=False, server_default=sa.text("'quick'")
         ),
     )
-    # Zitierstil für deep-Reports: "apa" | "ieee" | "plain" (NULL = ieee).
+    # Citation style for deep reports: "apa" | "ieee" | "plain" (NULL = ieee).
     citation_style: str | None = Field(
         default=None,
         max_length=16,
         sa_column=Column(sa.String(16), nullable=True),
     )
 
-    # Zugehörige Unterhaltung (Google-AI-Studio-Modell): Fragen desselben
-    # Chats teilen die conversation_id. Die Historie listet Conversations.
+    # Associated conversation (Google AI Studio model): questions within the
+    # same chat share the conversation_id. The history lists conversations.
     conversation_id: uuid.UUID | None = Field(
         default=None,
         foreign_key="conversations.id",
@@ -123,10 +123,10 @@ class ResearchProject(TimestampMixin, SQLModel, table=True):
         ondelete="CASCADE",
     )
 
-    # Follow-up-Kette (Stufe 5): Verweis auf die Ursprungs-Recherche, wenn
-    # diese Frage als Nachfrage zu einer früheren gestellt wurde. NULL bei
-    # eigenständigen Fragen. SET NULL: Löscht man das Original, bleibt die
-    # Nachfrage einfach "entwurzelt" stehen statt mitzulöschen.
+    # Follow-up chain (stage 5): reference to the original research when this
+    # question was asked as a follow-up to an earlier one. NULL for
+    # standalone questions. SET NULL: deleting the original simply leaves the
+    # follow-up "uprooted" instead of deleting it along.
     parent_id: uuid.UUID | None = Field(
         default=None,
         foreign_key="research_projects.id",
@@ -135,23 +135,24 @@ class ResearchProject(TimestampMixin, SQLModel, table=True):
         nullable=True,
     )
 
-    # Token-Verbrauch des (letzten) Laufs: {"input_tokens": …, "output_tokens": …,
-    # "total_tokens": …, "llm_calls": …}. NULL = noch nicht gelaufen.
+    # Token usage of the (last) run: {"input_tokens": …, "output_tokens": …,
+    # "total_tokens": …, "llm_calls": …}. NULL = has not run yet.
     usage: dict | None = Field(default=None, sa_column=Column(sa.JSON))
 
-    # Fehlergrund, falls status == error.
+    # Error reason, in case status == error.
     error: str | None = Field(default=None)
 
-    # Kompakter Gesprächs-Kontext (Fragen + Report-Auszüge), den der
-    # Client beim Anlegen mitgibt — Supervisor & Synthesizer sehen ihn.
+    # Compact conversation context (questions + report excerpts) that the
+    # client sends along on creation — supervisor & synthesizer see it.
     context_summary: str | None = Field(default=None, sa_column=Column(sa.Text))
 
-    # Ausführungs-Historie (Sidepanel-Timeline): Liste von
-    # {t: ISO-Zeitstempel, event: "node"|"status"|…, ...payload}. Wird vom
-    # Service beim Lauf aufgezeichnet und am Ende persistiert.
+    # Execution history (sidepanel timeline): list of
+    # {t: ISO timestamp, event: "node"|"status"|…, ...payload}. Recorded by
+    # the service during the run and persisted at the end.
     trace: list | None = Field(default=None, sa_column=Column(sa.JSON))
 
-    # Quellen der Recherche (Liste von {title,url,...}-Dicts). Ab Stufe 2/3
-    # gefüllt — die Spalte existiert schon, damit keine zweite Migration nötig
-    # wird. sa.JSON (statt JSONB) ist SQLite-kompatibel → Tests laufen weiter.
+    # Sources of the research (list of {title,url,...} dicts). Filled from
+    # stage 2/3 onwards — the column already exists so that no second
+    # migration is needed. sa.JSON (instead of JSONB) is SQLite-compatible →
+    # the tests keep running.
     sources: list | None = Field(default=None, sa_column=Column(sa.JSON))

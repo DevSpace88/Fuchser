@@ -4,17 +4,17 @@ Revision ID: 0001_initial
 Revises:
 Create Date: 2026-01-01 00:00:00
 
-ERSTE Migration — legt die beiden Basistabellen an.
+FIRST migration — creates the two base tables.
 
-Wir schreiben diese Migration HIER VON HAND, damit du genau siehst, was passiert.
-Später erzeugst du Migrationen mit `alembic revision --autogenerate -m "..."`.
-Alembic generiert dann automatisch genau dieses op.create_table(...)-Zeug.
+We write this migration HERE BY HAND so that you see exactly what happens.
+Later you generate migrations with `alembic revision --autogenerate -m "..."`.
+Alembic then automatically generates exactly this op.create_table(...) stuff.
 
-Aufbau jeder Tabelle:
-  - Primärschlüssel (PK)
-  - Spalten mit Typ + Constraints (NULL/NOT NULL, UNIQUE, DEFAULT, ...)
-  - Fremdschlüssel (FK) verweisen auf PK einer anderen Tabelle
-  - Indizes für Spalten, nach denen oft gesucht wird (Email, user_id, ...)
+Structure of every table:
+  - Primary key (PK)
+  - Columns with type + constraints (NULL/NOT NULL, UNIQUE, DEFAULT, ...)
+  - Foreign keys (FK) referencing the PK of another table
+  - Indexes for columns that are often searched (email, user_id, ...)
 """
 
 from collections.abc import Sequence
@@ -31,22 +31,22 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # --- Tabelle: users ---------------------------------------------------
-    # `op.create_table(...)` ist Alembics Weg, CREATE TABLE anzulegen — aber
-    # datenbankübergreifend (funktioniert auf Postgres, MySQL, SQLite gleich).
+    # --- Table: users -----------------------------------------------------
+    # `op.create_table(...)` is Alembic's way of issuing CREATE TABLE — but
+    # database-agnostic (works the same on Postgres, MySQL, SQLite).
     op.create_table(
         "users",
-        # UUID als Primärschlüssel. server_default erzeugt einen neuen UUID
-        # direkt in der DB beim Insert (postgresql-Funktion gen_random_uuid()).
+        # UUID as primary key. server_default generates a new UUID
+        # directly in the DB on insert (postgresql function gen_random_uuid()).
         sa.Column("id", sa.Uuid(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column("email", sa.String(length=255), nullable=False),
         sa.Column("hashed_password", sa.String(), nullable=False),
         sa.Column("full_name", sa.String(length=255), nullable=True),
-        # Rolle als Postgres-Enum-Typ "userrole" (Werte: 'user','admin').
-        # SQLModel/SQLAlchemy leitet diesen Typnamen aus dem Klassen-Namen des
-        # Python-Enums (UserRole -> kleingeschrieben: userrole) ab. Die .value-
-        # Werte des Enums ('user','admin') müssen exakt mit den Enum-Werten hier
-        # übereinstimmen, sonst schlägt das Einfügen fehl.
+        # Role as a Postgres enum type "userrole" (values: 'user','admin').
+        # SQLModel/SQLAlchemy derives this type name from the class name of
+        # the Python enum (UserRole -> lowercased: userrole). The enum's
+        # .value entries ('user','admin') must match the enum values here
+        # exactly, otherwise inserts fail.
         sa.Column(
             "role",
             sa.Enum("user", "admin", name="userrole"),
@@ -67,16 +67,16 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("email"),  # jede E-Mail nur einmal
-        # (Der Enum-Typ userrole schränkt die Werte schon auf 'user'/'admin'
-        # ein — kein zusätzlicher CHECK-Constraint nötig.)
+        sa.UniqueConstraint("email"),  # each email only once
+        # (The enum type userrole already restricts values to 'user'/'admin'
+        # — no additional CHECK constraint needed.)
     )
-    # Indizes beschleunigen Suchen. Auf Email suchen wir beim Login IMMER,
-    # also verdient Email einen Index (UniqueConstraint oben legt schon einen).
+    # Indexes speed up searches. We ALWAYS search by email on login,
+    # so email deserves an index (the UniqueConstraint above already adds one).
     op.create_index("ix_users_email", "users", ["email"], unique=True)
     op.create_index("ix_users_id", "users", ["id"], unique=False)
 
-    # --- Tabelle: refresh_tokens -----------------------------------------
+    # --- Table: refresh_tokens -------------------------------------------
     op.create_table(
         "refresh_tokens",
         sa.Column("id", sa.Uuid(), server_default=sa.text("gen_random_uuid()"), nullable=False),
@@ -100,7 +100,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Macht upgrade() rückgängig — TABellen in umgekehrter Reihenfolge droppen."""
+    """Reverts upgrade() — drop the tables in reverse order."""
     op.drop_index("ix_refresh_tokens_token_hash", table_name="refresh_tokens")
     op.drop_index("ix_refresh_tokens_user_id", table_name="refresh_tokens")
     op.drop_index("ix_refresh_tokens_id", table_name="refresh_tokens")

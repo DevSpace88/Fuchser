@@ -1,25 +1,25 @@
 name: fuchser
 # ============================================================================
-# docker-compose.yml — PRODUKTIONS-Deploy auf Coolify
+# docker-compose.yml — PRODUCTION deployment on Coolify
 # ============================================================================
-# Änderungen gegenüber der Dev-Variante:
-#   * frontend: statt node-Dev-Server jetzt der Multi-Stage-Produktions-Build
-#     (Vite bauen -> nginx ausliefern). Fixes "npm /app/package.json ENOENT".
-#   * backend:  KEIN Host-Volume-Mount mehr. Der Code kommt per `COPY . .`
-#     ins Image (backend/Dockerfile), dadurch bleibt alembic.ini erhalten.
+# Changes compared to the dev variant:
+#   * frontend: instead of a node dev server, now the multi-stage production
+#     build (build Vite -> serve via nginx). Fixes "npm /app/package.json ENOENT".
+#   * backend:  NO host volume mount anymore. The code gets into the image via
+#     `COPY . .` (backend/Dockerfile), so alembic.ini is preserved.
 #     Fixes "No 'script_location' key found".
-#   * db:       Healthcheck ohne ${...}-Interpolation (robuster im Compose-
-#     Parsing), Volume-Name explizit.
+#   * db:       healthcheck without ${...} interpolation (more robust during
+#     Compose parsing), explicit volume name.
 #
-# Coolify mappt die Domains über docker_compose_domains (backend/frontend)
-# und routet per Reverse-Proxy. Die internen Ports müssen deshalb nur per
-# `expose` sichtbar sein + der Service über den Service-Namen erreichbar.
+# Coolify maps the domains via docker_compose_domains (backend/frontend)
+# and routes through a reverse proxy. The internal ports therefore only need
+# to be visible via `expose` + the service reachable via its service name.
 # ============================================================================
 
 services:
 
   # ---------------------------------------------------------------------------
-  # 1) DATENBANK (PostgreSQL) — als Teil des Compose-Stacks
+  # 1) DATABASE (PostgreSQL) — as part of the Compose stack
   # ---------------------------------------------------------------------------
   db:
     image: postgres:17-alpine
@@ -28,14 +28,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-app_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
       POSTGRES_DB: ${POSTGRES_DB:-app_db}
-    # Kein Port nach außen nötig — nur intern erreichbar.
+    # No port exposed to the outside — only reachable internally.
     expose:
       - "5432"
     volumes:
       - fuchser_pgdata:/var/lib/postgresql/data
     healthcheck:
-      # PostgreSQL-interner User "postgres" existiert immer, daher ist
-      # ein pg_isready ohne auf die App-DB zu zeigen hier am robustesten.
+      # The PostgreSQL-internal user "postgres" always exists, so a
+      # pg_isready that doesn't target the app DB is the most robust here.
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app_user} -d ${POSTGRES_DB:-app_db}" ]
       interval: 5s
       timeout: 5s
@@ -43,7 +43,7 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # REDIS — Queue + PubSub für Background-Tasks (reload-sichere Agenten)
+  # REDIS — queue + pub/sub for background tasks (reload-safe agents)
   # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
@@ -59,7 +59,7 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # 2) BACKEND (FastAPI) — eigener Build, kein Volume-Overlay
+  # 2) BACKEND (FastAPI) — its own build, no volume overlay
   # ---------------------------------------------------------------------------
   backend:
     build:
@@ -75,7 +75,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-app_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me}
       - POSTGRES_DB=${POSTGRES_DB:-app_db}
-      # Der DB-Dienst heißt im Compose-Netzwerk "db".
+      # The DB service is called "db" in the Compose network.
       - POSTGRES_HOST=db
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
       - CORS_ORIGINS=${CORS_ORIGINS:-https://fuchser.sergejgorochow.de}
@@ -92,7 +92,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
     expose:
       - "8000"
-    # Nach dem Start Migrationen fahren, dann uvicorn OHNE --reload (Prod).
+    # Run migrations after startup, then uvicorn WITHOUT --reload (prod).
     command: >
       sh -c "python -m alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
@@ -104,7 +104,7 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # WORKER — führt LangGraph-Graphen unabhängig vom API aus
+  # WORKER — runs LangGraph graphs independently of the API
   # ---------------------------------------------------------------------------
   worker:
     build:
@@ -136,15 +136,15 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # 3) FRONTEND (Vite-Produktions-Build -> nginx)
+  # 3) FRONTEND (Vite production build -> nginx)
   # ---------------------------------------------------------------------------
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: fuchser-frontend
-    # VITE_API_URL wird zur Build-Zeit gesetzt. In Produktion liefern wir
-    # über denselben Domain-Host aus; relative /api-Pfade daher leer lassen.
+    # VITE_API_URL is set at build time. In production we serve
+    # from the same domain host; therefore leave it empty for relative /api paths.
     environment:
       - VITE_API_URL=${VITE_API_URL:-}
     expose:

@@ -1,8 +1,8 @@
-// routes/history.tsx — Die Chat-Historie: UNSERER UNTERHALTUNGEN.
+// routes/history.tsx — the chat history: OUR CONVERSATIONS.
 // ============================================================================
-// Google-AI-Studio-Modell: Die Historie listet CHATS (Conversations), nicht
-// einzelne Fragen. Nachfragen sind Nachrichten INNERHALB eines Chats.
-// Jede Karte: Titel (umbenennbar ✏️), Nachrichtenzahl, Token, letzter Stand.
+// Google AI Studio model: the history lists CHATS (conversations), not
+// individual questions. Follow-ups are messages INSIDE a chat.
+// Each card: title (renameable ✏️), message count, tokens, last state.
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";

@@ -1,14 +1,14 @@
 """
-api/v1/research.py — Recherche-Endpunkte (/api/v1/research/*)
-==============================================================
+api/v1/research.py — research endpoints (/api/v1/research/*)
+=============================================================
 
-DÜNNE Endpunkte (Muster wie auth.py/users.py): HTTP-Dinge + Delegation an
-research_service. Alle Endpunkte verlangen Login (CurrentUserDep) — ohne
-Auth gibt es nicht mal eine Liste.
+THIN endpoints (pattern like auth.py/users.py): HTTP concerns + delegation
+to research_service. All endpoints require login (CurrentUserDep) — without
+auth you do not even get a list.
 
-Der spannende Endpunkt ist POST /{id}/run: Er liefert KEIN JSON, sondern
-einen Server-Sent-Events-Strom (text/event-stream) — die Live-Ausgabe des
-LangGraph-Laufs (siehe PLAN.md §4 für das Event-Protokoll).
+The exciting endpoint is POST /{id}/run: it returns NO JSON but a
+Server-Sent-Events stream (text/event-stream) — the live output of the
+LangGraph run (see PLAN.md §4 for the event protocol).
 """
 
 import logging
@@ -36,20 +36,20 @@ router = APIRouter(prefix="/research", tags=["research"])
 
 
 # ----------------------------------------------------------------------------
-# GET /research/admin/all — ALLE Recherchen (NUR ADMIN, Stufe 5)
+# GET /research/admin/all — ALL research (ADMIN ONLY, stage 5)
 # ----------------------------------------------------------------------------
 @router.get("/admin/all", response_model=list[ResearchAdminOut], dependencies=[RequireAdmin])
 async def list_all_research(session: SessionDep):
     """
-    Admin-Sicht: alle Recherchen aller User inkl. E-Mail und Token-Verbrauch.
-    WICHTIG: Muss VOR /{project_id} registriert sein, sonst frisst der
-    Pfad-Parameter "admin" die Route!
+    Admin view: all research of all users incl. email and token usage.
+    IMPORTANT: must be registered BEFORE /{project_id}, otherwise the
+    path parameter "admin" swallows the route!
     """
     return await research_service.list_all_projects(session)
 
 
 # ----------------------------------------------------------------------------
-# POST /research — neue Recherche anlegen
+# POST /research — create a new research run
 # ----------------------------------------------------------------------------
 @router.post("", response_model=ResearchProjectOut, status_code=status.HTTP_201_CREATED)
 async def create_research(
@@ -57,11 +57,11 @@ async def create_research(
     current_user: CurrentUserDep,
     session: SessionDep,
 ):
-    """Legt eine neue Recherche an (Status: queued). Der Graph startet erst mit /run."""
+    """Creates a new research run (status: queued). The graph only starts with /run."""
     try:
         return await research_service.create_project(session, current_user, data)
     except research_service.ProjectNotFound:
-        # followup_of zeigt auf ein fremdes Projekt -> nicht verraten, 404.
+        # followup_of points to someone else's project -> do not reveal it, 404.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Recherche nicht gefunden.",
@@ -69,19 +69,19 @@ async def create_research(
 
 
 # ----------------------------------------------------------------------------
-# GET /research — eigene Recherchen listen
+# GET /research — list your own research
 # ----------------------------------------------------------------------------
 @router.get("", response_model=list[ResearchProjectOut])
 async def list_research(
     current_user: CurrentUserDep,
     session: SessionDep,
 ):
-    """Alle Recherche-Projekte des eingeloggten Users (neueste zuerst)."""
+    """All research projects of the logged-in user (newest first)."""
     return await research_service.list_projects(session, current_user)
 
 
 # ----------------------------------------------------------------------------
-# GET /research/{id} — Detail (inkl. fertigem Report)
+# GET /research/{id} — detail (incl. finished report)
 # ----------------------------------------------------------------------------
 @router.get("/{project_id}", response_model=ResearchProjectOut)
 async def get_research(
@@ -90,8 +90,8 @@ async def get_research(
     session: SessionDep,
 ):
     """
-    Einzelnes Projekt. Gehört es einem anderen User, liefern wir 404 (nicht
-    403) — so verraten wir nicht einmal, DASS es das Projekt gibt.
+    Single project. If it belongs to another user, we return 404 (not
+    403) — this way we do not even reveal THAT the project exists.
     """
     try:
         return await research_service.get_project(session, current_user, project_id)
@@ -103,7 +103,7 @@ async def get_research(
 
 
 # ----------------------------------------------------------------------------
-# PATCH /research/{id} — Unterhaltung umbenennen (steuert auch den PDF-Titel)
+# PATCH /research/{id} — rename the conversation (also drives the PDF title)
 # ----------------------------------------------------------------------------
 @router.patch("/{project_id}", response_model=ResearchProjectOut)
 async def rename_research(
@@ -112,7 +112,7 @@ async def rename_research(
     current_user: CurrentUserDep,
     session: SessionDep,
 ):
-    """Setzt den Anzeigename. Die Originalfrage bleibt als Kontext erhalten."""
+    """Sets the display name. The original question is kept as context."""
     try:
         return await research_service.rename_project(session, current_user, project_id, data.title)
     except ProjectNotFound:
@@ -123,7 +123,7 @@ async def rename_research(
 
 
 # ----------------------------------------------------------------------------
-# DELETE /research/{id} — Projekt löschen
+# DELETE /research/{id} — delete project
 # ----------------------------------------------------------------------------
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_research(
@@ -131,7 +131,7 @@ async def delete_research(
     current_user: CurrentUserDep,
     session: SessionDep,
 ):
-    """Löscht eine Recherche (Ownership-Check wie bei GET)."""
+    """Deletes a research run (ownership check as with GET)."""
     try:
         await research_service.delete_project(session, current_user, project_id)
     except ProjectNotFound:
@@ -142,18 +142,18 @@ async def delete_research(
 
 
 # ----------------------------------------------------------------------------
-# GET /research/{id}/pdf — Report als echten PDF-DOWNLOAD
+# GET /research/{id}/pdf — report as a real PDF DOWNLOAD
 # ----------------------------------------------------------------------------
-# KEIN window.print()-Trick: Der Server rendert Markdown → HTML → PDF und
-# liefert die Datei mit Content-Disposition: attachment — der Browser
-# speichert sie direkt als .pdf.
+# NO window.print() trick: the server renders Markdown → HTML → PDF and
+# delivers the file with Content-Disposition: attachment — the browser
+# saves it directly as .pdf.
 @router.get("/{project_id}/pdf")
 async def download_research_pdf(
     project_id: UUID,
     current_user: CurrentUserDep,
     session: SessionDep,
 ):
-    """Report + Quellen als PDF-Datei (Download). 409, falls kein Report da."""
+    """Report + sources as a PDF file (download). 409 if no report exists yet."""
     try:
         project = await research_service.get_project(session, current_user, project_id)
     except ProjectNotFound:
@@ -165,14 +165,14 @@ async def download_research_pdf(
     try:
         pdf_bytes = research_service.report_to_pdf(project)
     except ValueError as e:
-        # Kein Report → 409 Conflict (Ressource existiert, ist aber nicht bereit).
+        # No report → 409 Conflict (resource exists but is not ready).
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(e),
         ) from None
 
-    # Dateiname: Frage gekürzt — RFC 5987-kodiert für Umlaute (filename*),
-    # plus ASCII-Fallback (filename).
+    # File name: shortened question — RFC 5987-encoded for umlauts (filename*),
+    # plus an ASCII fallback (filename).
     import re as _re
     from urllib.parse import quote as _quote
 
@@ -196,13 +196,13 @@ async def download_research_pdf(
 
 
 # ----------------------------------------------------------------------------
-# DOKUMENTE — Upload (PDF/DOCX/TXT/MD/CSV), Liste, Löschen
+# DOCUMENTS — upload (PDF/DOCX/TXT/MD/CSV), list, delete
 # ----------------------------------------------------------------------------
 class DocumentOut(BaseModel):
-    """Ausgabe eines hochgeladenen Dokuments (ohne den Volltext)."""
+    """Output of an uploaded document (without the full text)."""
 
     id: UUID
-    project_id: UUID  # Eigentümer-Projekt (bei Ketten-Sicht relevant fürs Löschen)
+    project_id: UUID  # owning project (relevant for deletion in the chain view)
     filename: str
     mime_type: str
     size_bytes: int
@@ -220,7 +220,7 @@ async def upload_documents(
     session: SessionDep,
     files: Annotated[list[UploadFile], File(description="Eine oder mehrere Dateien")],
 ):
-    """Lädt Dokumente hoch und extrahiert sofort den Text (OCR nicht unterstützt)."""
+    """Uploads documents and immediately extracts the text (OCR not supported)."""
     try:
         project = await research_service.get_project(session, current_user, project_id)
     except ProjectNotFound:
@@ -249,8 +249,8 @@ async def list_documents_endpoint(
     session: SessionDep,
     chain: bool = False,
 ):
-    """Dokumente einer Recherche — mit ?chain=true die GANZE Unterhaltung
-    (auch Dateien, die an Follow-up-Fragen dieses Chats hochgeladen wurden)."""
+    """Documents of a research run — with ?chain=true the ENTIRE conversation
+    (including files uploaded to follow-up questions of this chat)."""
     try:
         project = await research_service.get_project(session, current_user, project_id)
     except ProjectNotFound:
@@ -273,7 +273,7 @@ async def delete_document_endpoint(
     current_user: CurrentUserDep,
     session: SessionDep,
 ):
-    """Entfernt ein Dokument aus der Recherche (wirkt ab dem NÄCHSTEN Lauf)."""
+    """Removes a document from the research run (takes effect from the NEXT run)."""
     try:
         project = await research_service.get_project(session, current_user, project_id)
     except ProjectNotFound:
@@ -291,10 +291,10 @@ async def delete_document_endpoint(
 
 
 # ----------------------------------------------------------------------------
-# POST /research/{id}/resume — STAGE 3: Graph nach Freigabe fortsetzen
+# POST /research/{id}/resume — STAGE 3: continue the graph after approval
 # ----------------------------------------------------------------------------
 class OutlineApproval(BaseModel):
-    """POST /research/{id}/resume — die (evtl. bearbeitete) Gliederung."""
+    """POST /research/{id}/resume — the (possibly edited) outline."""
 
     outline: dict
 
@@ -307,9 +307,9 @@ async def resume_research(
     session: SessionDep,
 ):
     """
-    Setzt einen pausierten Deep-Report fort (nach Outline-Freigabe).
-    Der Body enthält die ggf. bearbeitete Gliederung.
-    Liefert SSE-Stream (wie /run).
+    Continues a paused deep report (after outline approval).
+    The body contains the possibly edited outline.
+    Returns an SSE stream (like /run).
     """
     try:
         project = await research_service.get_project(session, current_user, project_id)
@@ -327,7 +327,7 @@ async def resume_research(
 
 
 # ----------------------------------------------------------------------------
-# POST /research/{id}/run — DER SSE-ENDPUNKT: Graph live streamen
+# POST /research/{id}/run — THE SSE ENDPOINT: stream the graph live
 # ----------------------------------------------------------------------------
 @router.post("/{project_id}/run")
 async def run_research(
@@ -336,19 +336,19 @@ async def run_research(
     session: SessionDep,
 ):
     """
-    Führt den LangGraph-Lauf für das Projekt aus und streamt die Events:
+    Executes the LangGraph run for the project and streams the events:
 
         event: status  {"status": "running"}
-        event: token   {"text": "..."}          # Live-Token der Antwort
+        event: token   {"text": "..."}          # live tokens of the answer
         event: done    {"status": "done"}
         event: error   {"detail": "..."}
 
-    Warum POST + fetch-Streaming statt EventSource? EventSource kann nur GET
-    und keine Auth-Header senden — fetch + ReadableStream kann beides.
+    Why POST + fetch streaming instead of EventSource? EventSource can only
+    do GET and cannot send auth headers — fetch + ReadableStream can do both.
 
-    Die Header verhindern Pufferung durch Proxys (Vite-Dev-Proxy, nginx):
-    ohne `X-Accel-Buffering: no` würden Token-Chunks gebündelt und der
-    Live-Effekt wäre weg.
+    The headers prevent buffering by proxies (Vite dev proxy, nginx):
+    without `X-Accel-Buffering: no` token chunks would be batched and the
+    live effect would be gone.
     """
     try:
         project = await research_service.get_project(session, current_user, project_id)

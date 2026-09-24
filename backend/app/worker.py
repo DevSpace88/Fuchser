@@ -1,14 +1,13 @@
 """
-worker.py — Eigenständiger Worker-Prozess für Graph-Ausführung
-================================================================
+worker.py — Standalone worker process for graph execution
+==========================================================
 
-Läuft als SEPARATER Prozess/Container und nimmt Tasks aus der Redis-Queue
-entgegen. Führt den LangGraph-Graphen aus und publish't Fortschritt via
-Redis PubSub. Unabhängig vom API-Server — Browser-Reloads können den
-Agenten NICHT mehr töten.
+Runs as a SEPARATE process/container and takes tasks from the Redis queue.
+Executes the LangGraph graph and publishes progress via Redis PubSub.
+Independent of the API server — browser reloads can NO LONGER kill the agent.
 
 Start:  python -m app.worker
-Docker: gleiche Image wie Backend, anderes Command
+Docker: same image as the backend, different command
 """
 
 import asyncio
@@ -23,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 async def process_project(project_id: str) -> None:
-    """Führt den Graphen für EIN Projekt aus (mit eigener DB-Session)."""
+    """Executes the graph for ONE project (with its own DB session)."""
     from app.core.db import AsyncSessionLocal
     from app.core.redis import clear_run_marker, publish_progress, refresh_run_marker
     from app.models.research_project import ResearchProject
@@ -40,9 +39,9 @@ async def process_project(project_id: str) -> None:
         await session.commit()
         await publish_progress(project_id, "status", {"status": "running"})
 
-        # Heartbeat: Run-Marker alle 15s erneuern, damit die API erkennt,
-        # dass dieser Task noch lebt (stirbt der Worker, verfällt der Marker
-        # und ein Reconnect reiht den Lauf mit Resume neu ein).
+        # Heartbeat: renew the run marker every 15s so the API can tell
+        # that this task is still alive (if the worker dies, the marker
+        # expires and a reconnect re-queues the run with resume).
         async def _heartbeat() -> None:
             while True:
                 await refresh_run_marker(project_id)
@@ -64,7 +63,7 @@ async def process_project(project_id: str) -> None:
 
 
 async def _run_graph(session, project) -> None:
-    """Der eigentliche Graph-Lauf mit Redis-PubSub für Fortschritt."""
+    """The actual graph run with Redis PubSub for progress."""
     from datetime import UTC, datetime
 
     from app.agent.deep_report import build_deep_report_graph
@@ -86,12 +85,12 @@ async def _run_graph(session, project) -> None:
     config = {"configurable": {"thread_id": str(project.thread_id)}}
     docs = documents_for_agent(await list_documents_for_chain(session, project))
 
-    # RESUME-Semantik: Teilkapitel vorhanden, aber kein fertiger Report ->
-    # abgebrochenen Lauf fortsetzen. Der Graph startet mit Input, aber die
-    # Nodes sind IDEMPOTENT: Outline-Planung + Kapitel-Recherche überspringen
-    # alles, was im Checkpoint-State schon vorhanden ist, und der Writer
-    # überspringt die gespeicherten Kapitel. => Nur die FEHLENDEN Kapitel
-    # kosten Tokens — Outline/Recherche werden nicht erneut bezahlt.
+    # RESUME semantics: partial chapters exist, but no finished report ->
+    # continue the aborted run. The graph starts with input, but the
+    # nodes are IDEMPOTENT: outline planning + chapter research skip
+    # everything that already exists in the checkpoint state, and the writer
+    # skips the stored chapters. => Only the MISSING chapters
+    # cost tokens — outline/research are not paid for again.
     resuming = bool(project.chapters) and not project.report
     if not resuming:
         project.chapters = None
@@ -125,11 +124,11 @@ async def _run_graph(session, project) -> None:
         trace.append(entry)
 
     async def save_and_publish(event: str, data: dict) -> None:
-        """Event in Trace aufnehmen, in DB persistieren, an Redis publishen."""
+        """Record the event in the trace, persist it to the DB, publish it to Redis."""
         nonlocal last_trace_save
         record(event, data)
         await publish_progress(project.id, event, data)
-        # Inkrementell persistieren (alle 5 Events)
+        # Persist incrementally (every 5 events)
         if len(trace) - last_trace_save >= 5:
             last_trace_save = len(trace)
             project.trace = list(trace)
@@ -152,8 +151,8 @@ async def _run_graph(session, project) -> None:
                 and payload.get("status") == "done"
                 and payload.get("content")
             ):
-                # Kapitel SOFORT persistieren: bricht der Lauf beim nächsten
-                # Kapitel ab, sind alle fertigen Kapitel schon in der DB.
+                # Persist the chapter IMMEDIATELY: if the run aborts at the
+                # next chapter, all finished chapters are already in the DB.
                 chapters = list(project.chapters or [])
                 chapters.append(
                     {"title": payload.get("title", ""), "content": payload["content"]}
@@ -225,17 +224,17 @@ async def _run_graph(session, project) -> None:
 
 
 async def _requeue_orphaned_runs() -> int:
-    """Start-Scan (Selbstheilung nach Crash/Redeploy): Läufe mit Status
-    'running', die weder in der Queue liegen noch einen legitimen Besitzer
-    haben, neu einordnen — Dank Kapitel-Persistenz + idempotenter Nodes
-    GÜNSTIG ab dem letzten fertigen Kapitel statt von vorne.
+    """Startup scan (self-healing after crash/redeploy): re-queue runs with
+    status 'running' that are neither in the queue nor have a legitimate
+    owner — thanks to chapter persistence + idempotent nodes this is CHEAP,
+    resuming from the last finished chapter instead of from scratch.
 
-    Annahme: genau EIN Worker-Container (siehe docker-compose.yml). Da DIESER
-    Worker gerade erst startet, kann kein anderer Worker leben — die vier
-    Fälle sind damit eindeutig:
-      * Task in Queue            -> nichts tun (BLPOP holt ihn)
-      * nicht in Queue, Marker   -> Leftover-Marker (Redeploy < TTL) -> verwaist
-      * nicht in Queue, kein M.  -> Worker starb, Marker verfallen     -> verwaist
+    Assumption: exactly ONE worker container (see docker-compose.yml). Since
+    THIS worker has only just started, no other worker can be alive — the
+    four cases are therefore unambiguous:
+      * Task in queue            -> do nothing (BLPOP fetches it)
+      * not in queue, marker     -> leftover marker (redeploy < TTL) -> orphaned
+      * not in queue, no marker  -> worker died, marker expired      -> orphaned
     """
     from sqlmodel import select
 
@@ -252,7 +251,7 @@ async def _requeue_orphaned_runs() -> int:
     for project in orphans:
         pid = str(project.id)
         if await queue_contains(pid):
-            continue  # liegt noch in der Queue — BLPOP kümmert sich
+            continue  # still in the queue — BLPOP will take care of it
         if await has_run_marker(pid):
             logger.warning(
                 "Lauf %s: Run-Marker lebt, aber kein Task in der Queue — "
@@ -267,29 +266,29 @@ async def _requeue_orphaned_runs() -> int:
 
 
 async def main() -> None:
-    """Worker-Main-Loop: Tasks aus Redis-Queue nehmen und abarbeiten."""
+    """Worker main loop: take tasks from the Redis queue and process them."""
     from app.core.redis import pop_task
 
     logger.info("🦊 Fuchser-Worker gestartet — warte auf Tasks …")
 
-    # Checkpointer initialisieren (für Graph-Persistenz)
+    # Initialize the checkpointer (for graph persistence)
     from app.agent.persistence import init_checkpointer
     await init_checkpointer()
 
-    # Selbstheilung: Läufe aus einem Absturz des Vorgänger-Workers neu
-    # einordnen (Resume ab letztem Kapitel), bevor neue Tasks angenommen werden.
+    # Self-healing: re-queue runs from a crash of the previous worker
+    # (resume from the last chapter) before accepting new tasks.
     try:
         orphans = await _requeue_orphaned_runs()
         if orphans:
             logger.info("Start-Scan: %d verwaiste Läufe neu eingeordnet", orphans)
-    except Exception:  # noqa: BLE001 — Scan darf den Start nie blockieren
+    except Exception:  # noqa: BLE001 — the scan must never block startup
         logger.exception("Start-Scan fehlgeschlagen — Worker läuft trotzdem")
 
     while True:
         try:
             project_id = await pop_task(timeout=5)
             if project_id is None:
-                continue  # Timeout — weiter pollen
+                continue  # timeout — keep polling
 
             logger.info("Task erhalten: %s", project_id)
             await process_project(project_id)

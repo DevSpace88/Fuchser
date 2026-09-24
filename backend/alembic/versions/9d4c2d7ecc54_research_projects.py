@@ -4,17 +4,17 @@ Revision ID: 9d4c2d7ecc54
 Revises: 0002_fix_role_enum
 Create Date: 2026-08-29 00:26:02.728597+00:00
 
-MANUELL BEREINIGT — Lernhinweis:
-  `alembic revision --autogenerate` vergleicht Modelle mit der DB und schlägt
-  ALLE Unterschiede vor — auch welche, die wir NICHT wollen:
-    * Die LangGraph-Checkpoint-Tabellen (checkpoints, checkpoint_writes, ...)
-      gehören NICHT zu unserem Modell und werden vom AsyncPostgresSaver selbst
-      verwaltet -> HIER NIEMALS anfassen (siehe AGENTS.md).
-    * server_default-Diffs auf users/refresh_tokens und "unique constraint
-      removed"-Detektion sind Vergleichs-Artefakte, keine echten Änderungen.
-  Autogenerate ist ein ENTWURF — vor dem Upgrade immer lesen und putzen.
+MANUALLY CLEANED UP — learning note:
+  `alembic revision --autogenerate` compares models with the DB and proposes
+  ALL differences — including ones we do NOT want:
+    * The LangGraph checkpoint tables (checkpoints, checkpoint_writes, ...)
+      are NOT part of our model and are managed by the AsyncPostgresSaver
+      itself -> NEVER touch them here (see AGENTS.md).
+    * server_default diffs on users/refresh_tokens and "unique constraint
+      removed" detection are comparison artifacts, not real changes.
+  Autogenerate is a DRAFT — always read and clean it up before upgrading.
 
-Diese Migration legt NUR die Tabelle research_projects an (siehe PLAN.md §4).
+This migration creates ONLY the research_projects table (see PLAN.md §4).
 """
 from typing import Sequence, Union
 

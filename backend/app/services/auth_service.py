@@ -1,39 +1,39 @@
 """
-services/auth_service.py — GESCHÄFTSLOGIK für Auth
+services/auth_service.py — BUSINESS LOGIC for auth
 ==================================================
 
-Hier liegt die eigentliche Auth-Logik: Registrieren, Login, Token-Erzeugung,
-Refresh (mit Rotation), Logout.
+This is where the actual auth logic lives: registration, login, token creation,
+refresh (with rotation), logout.
 
-Warum eine Service-Schicht?
----------------------------
-Die Endpunkte (api/v1/auth.py) sollen DÜNN sein: HTTP-Sachen (Statuscodes,
-Request-Parsing) und Delegation. Die eigentliche Logik gehört in einen
-Service. Vorteile:
-  * Testbar ohne HTTP-Layer (Unit-Tests rufen Funktionen direkt auf).
-  * Wiederverwendbar (z. B. könnte ein CLI-Command die gleiche Logik nutzen).
-  * Übersichtlicher: ein Endpunkt ist 5 Zeilen statt 50.
+Why a service layer?
+--------------------
+The endpoints (api/v1/auth.py) should stay THIN: HTTP concerns (status codes,
+request parsing) and delegation. The actual logic belongs in a service.
+Advantages:
+  * Testable without the HTTP layer (unit tests call functions directly).
+  * Reusable (e.g. a CLI command could use the same logic).
+  * Clearer: an endpoint is 5 lines instead of 50.
 
 ────────────────────────────────────────────────────────────────────────────
-DER REFRESH-FLOW (Rotation) — der schwierigste Teil
+THE REFRESH FLOW (rotation) — the hardest part
 ────────────────────────────────────────────────────────────────────────────
-1. Login:     Client bekommt (access, refresh_a). Wir speichern refresh_a
-              (gehasht) mit revoked=False in der DB.
-2. Access läuft ab. Client schickt refresh_a an /refresh.
+1. Login:     Client receives (access, refresh_a). We store refresh_a
+              (hashed) with revoked=False in the DB.
+2. Access expires. Client sends refresh_a to /refresh.
 3. Server:
-     a. Verifiziert Signatur von refresh_a (PyJWT).
-     b. Sucht den zugehörigen DB-Eintrag via jti (=refresh_token.id).
-     c. Prüft: revoked=False? expires_at in Zukunft? user noch aktiv?
-     d. Macht refresh_a revoked=True ("Rotation": der alte ist tot).
-     e. Stellt NEUES Paar (access, refresh_b) aus und speichert refresh_b.
-4. Ab jetzt gilt NUR noch refresh_b. Würde ein Angreifer refresh_a stehlen
-   und einsetzen, wird der legitime Client beim nächsten /refresh merken,
-   dass sein Token revoked ist -> Alarm ("token reuse detection").
+     a. Verifies the signature of refresh_a (PyJWT).
+     b. Looks up the corresponding DB entry via jti (=refresh_token.id).
+     c. Checks: revoked=False? expires_at in the future? user still active?
+     d. Sets refresh_a revoked=True ("rotation": the old one is dead).
+     e. Issues a NEW pair (access, refresh_b) and stores refresh_b.
+4. From now on ONLY refresh_b is valid. If an attacker were to steal
+   refresh_a and use it, the legitimate client would notice at the next
+   /refresh that its token is revoked -> alarm ("token reuse detection").
 
-Vereinfachung in diesem Template:
-  Wir verzichten auf die erweiterte "Reuse Detection" (bei reuse ALLE Tokens
-  des Users sperren). Das ist eine Härtung, die für Lernzwecke optional ist —
-  im README unter "Erweiterungen" dokumentiert.
+Simplification in this template:
+  We skip the advanced "reuse detection" (blocking ALL of the user's tokens
+  on reuse). That is a hardening step that is optional for learning purposes —
+  documented in the README under "Erweiterungen" (extensions).
 """
 
 from datetime import UTC, timedelta
@@ -49,32 +49,32 @@ from app.models.user import User, UserRole
 from app.schemas.auth import TokenPair, UserCreate, UserRead
 
 
-# Duplicate-Email-Exception: wir definieren sie als eigene Exception, damit der
-# Endpunkt sie gezielt fangen und in einen sauberen 409 übersetzen kann.
+# Duplicate-email exception: we define it as its own exception so the endpoint
+# can catch it specifically and translate it into a clean 409.
 class EmailAlreadyExistsError(Exception):
-    """Es gibt bereits einen User mit dieser E-Mail."""
+    """A user with this email already exists."""
 
 
 class InvalidCredentialsError(Exception):
-    """Login/Refresh fehlgeschlagen (falsche Daten, abgelaufen, revoked)."""
+    """Login/refresh failed (wrong data, expired, revoked)."""
 
 
 # ============================================================================
-# 1) REGISTRIEREN
+# 1) REGISTER
 # ============================================================================
 async def register_user(session: AsyncSession, data: UserCreate) -> User:
     """
-    Legt einen neuen User an.
+    Creates a new user.
 
-    Ablauf:
-      1. Prüfen, ob es die E-Mail schon gibt -> falls ja, Fehler.
-      2. Passwort hashen (NIEMALS Klartext speichern!).
-      3. User-Objekt bauen und in der DB speichern.
+    Steps:
+      1. Check whether the email already exists -> if so, raise an error.
+      2. Hash the password (NEVER store plaintext!).
+      3. Build the user object and save it in the DB.
 
-    Neue User sind per Default Rolle=USER und is_active=True.
-    (Den ersten Admin legen wir via SEED_ADMIN_* beim Start an — siehe lifespan.)
+    New users default to role=USER and is_active=True.
+    (We create the first admin via SEED_ADMIN_* at startup — see lifespan.)
     """
-    # SELECT * FROM users WHERE email = ?  — asynchron ausgeführt.
+    # SELECT * FROM users WHERE email = ?  — executed asynchronously.
     existing = await session.exec(select(User).where(User.email == data.email))
     if existing.first() is not None:
         raise EmailAlreadyExistsError(data.email)
@@ -88,28 +88,28 @@ async def register_user(session: AsyncSession, data: UserCreate) -> User:
     )
     session.add(user)
     await session.commit()
-    # refresh() lädt die von der DB erzeugten Felder (id, created_at, ...) nach.
+    # refresh() reloads the fields generated by the DB (id, created_at, ...).
     await session.refresh(user)
     return user
 
 
 # ============================================================================
-# 2) LOGIN (Authentifizieren + Token-Paar ausstellen)
+# 2) LOGIN (authenticate + issue a token pair)
 # ============================================================================
 async def authenticate(session: AsyncSession, email: str, password: str) -> User:
     """
-    Prüft E-Mail + Passwort. Gibt den User zurück, falls korrekt.
-    Schlägt fehl -> InvalidCredentialsError.
+    Checks email + password. Returns the user if correct.
+    Fails -> InvalidCredentialsError.
 
-    WICHTIG (Sicherheit): Bei falschem Login verraten wir NICHT, OB die E-Mail
-    existiert — die Fehlermeldung ist immer dieselbe ("Ungültige Anmeldedaten").
-    Sonst könnte ein Angreifer durch Ausprobieren herausfinden, welche E-Mails
-    registriert sind (User-Enumeration).
+    IMPORTANT (security): on a failed login we do NOT reveal WHETHER the email
+    exists — the error message is always the same ("Ungültige Anmeldedaten").
+    Otherwise an attacker could find out by trial and error which emails are
+    registered (user enumeration).
     """
     user = (await session.exec(select(User).where(User.email == email))).first()
-    # Vorsicht: user kann None sein. Wir rufen verify_password dann nicht auf,
-    # sondern schmeißen direkt — aber wir tun das so, dass die Antwort identisch
-    # mit dem "Passwort falsch"-Fall ist.
+    # Careful: user can be None. In that case we do not call verify_password
+    # but raise immediately — and we do it so that the response is identical
+    # to the "wrong password" case.
     if user is None or not verify_password(password, user.hashed_password):
         raise InvalidCredentialsError()
     if not user.is_active:
@@ -119,33 +119,33 @@ async def authenticate(session: AsyncSession, email: str, password: str) -> User
 
 async def issue_token_pair(session: AsyncSession, user: User) -> TokenPair:
     """
-    Stellt ein (access, refresh)-Paar aus und speichert den Refresh-Token.
+    Issues an (access, refresh) pair and stores the refresh token.
 
-    Wird sowohl beim Login als auch beim Refresh aufgerufen (DRY).
+    Called both at login and at refresh (DRY).
     """
-    # --- Access-Token: kurz, enthält NUR die User-ID und den Typ. ---
+    # --- Access token: short, contains ONLY the user ID and the type. ---
     access = create_token(
         subject=user.id,
         token_type="access",
         expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
     )
 
-    # --- Refresh-Token: lang. Wir erzeugen erst die Token-ID (jti), dann
-    #     das JWT, hashen es für die DB und legen eine Zeile an. ---
+    # --- Refresh token: long. We first create the token ID (jti), then
+    #     the JWT, hash it for the DB and insert a row. ---
     refresh_record = RefreshToken(
         user_id=user.id,
-        # Hash wird unten gesetzt, sobald wir das JWT haben.
-        token_hash="",  # Platzhalter, wird gleich überschrieben
+        # Hash is set below, as soon as we have the JWT.
+        token_hash="",  # placeholder, overwritten right away
         expires_at=_refresh_expiry(),
     )
-    # refresh_record.id wurde von default_factory=uuid.uuid4 schon belegt.
+    # refresh_record.id has already been populated by default_factory=uuid.uuid4.
     refresh_jwt = create_token(
         subject=user.id,
         token_type="refresh",
         expires_delta=timedelta(days=settings.refresh_token_expire_days),
         extra_claims={"jti": str(refresh_record.id)},
     )
-    # Hash DES JWT-Strings speichern, nicht das JWT selbst.
+    # Store the hash OF the JWT string, not the JWT itself.
     refresh_record.token_hash = hash_password(refresh_jwt)
 
     session.add(refresh_record)
@@ -159,7 +159,7 @@ async def issue_token_pair(session: AsyncSession, user: User) -> TokenPair:
 
 
 def _refresh_expiry():
-    """Hilfsfunktion: Ablaufzeitpunkt des Refresh-Tokens als datetime."""
+    """Helper: the refresh token's expiry timestamp as a datetime."""
     from datetime import datetime
     from datetime import timedelta as _td
 
@@ -167,25 +167,25 @@ def _refresh_expiry():
 
 
 # ============================================================================
-# 3) REFRESH (neues Paar + Rotation des alten)
+# 3) REFRESH (new pair + rotation of the old one)
 # ============================================================================
 async def refresh_token_pair(session: AsyncSession, refresh_jwt: str) -> TokenPair:
     """
-    Tauscht einen Refresh-Token gegen ein neues Paar ein (Rotation).
+    Exchanges a refresh token for a new pair (rotation).
 
-    Schritte siehe Modul-Docstring (DER REFRESH-FLOW).
+    For the steps see the module docstring (THE REFRESH FLOW).
     """
-    # --- 1. JWT dekodieren (prüft Signatur + Ablauf) ---
+    # --- 1. Decode the JWT (verifies signature + expiry) ---
     try:
         payload = decode_token(refresh_jwt)
-    except Exception as e:  # jwt.InvalidTokenError + Unterklassen
+    except Exception as e:  # jwt.InvalidTokenError + subclasses
         raise InvalidCredentialsError() from e
 
-    # --- 2. Typ prüfen: ein Access-Token darf hier NICHT funktionieren ---
+    # --- 2. Check the type: an access token must NOT work here ---
     if payload.get("type") != "refresh":
         raise InvalidCredentialsError()
 
-    # --- 3. jti (Token-ID) extrahieren und DB-Eintrag laden ---
+    # --- 3. Extract the jti (token ID) and load the DB entry ---
     jti = payload.get("jti")
     if not jti:
         raise InvalidCredentialsError()
@@ -193,21 +193,21 @@ async def refresh_token_pair(session: AsyncSession, refresh_jwt: str) -> TokenPa
     if record is None:
         raise InvalidCredentialsError()
 
-    # --- 4. Hash vergleichen (Token gehört zu dieser jti?) ---
-    # Auch bei gleicher jti: Stimmt der Hash? (Verteidigung, falls jti leaked
-    # aber das echte JWT nicht.)
+    # --- 4. Compare the hash (does the token belong to this jti?) ---
+    # Even with the same jti: does the hash match? (Defense in case the jti
+    # leaked but the real JWT did not.)
     if not verify_password(refresh_jwt, record.token_hash):
         raise InvalidCredentialsError()
 
-    # --- 5. Status prüfen: revoked? abgelaufen? user aktiv? ---
+    # --- 5. Check status: revoked? expired? user active? ---
     if record.revoked:
         raise InvalidCredentialsError()
-    # expires_at wird beim decode bereits geprüft (exp-Claim). Wir prüfen
-    # zusätzlich den DB-Wert, falls jemand von Hand in der DB herumspielt.
+    # expires_at is already checked during decode (exp claim). We additionally
+    # check the DB value in case someone messes with the DB by hand.
     #
-    # Robustheit: Einige DBs (z. B. SQLite) speichern zeitzone-bewusste
-    # Datetimes als "naive" Werte zurück. Wir normalisieren beide Seiten auf
-    # UTC, sodass der Vergleich nie mit "offset-naive vs offset-aware" crasht.
+    # Robustness: some DBs (e.g. SQLite) return timezone-aware datetimes as
+    # "naive" values. We normalize both sides to UTC so the comparison never
+    # crashes with "offset-naive vs offset-aware".
     from datetime import datetime
 
     def _to_aware_utc(dt: datetime) -> datetime:
@@ -222,33 +222,33 @@ async def refresh_token_pair(session: AsyncSession, refresh_jwt: str) -> TokenPa
     if user is None or not user.is_active:
         raise InvalidCredentialsError()
 
-    # --- 6. ROTATION: alten Token widerrufen ---
+    # --- 6. ROTATION: revoke the old token ---
     record.revoked = True
     session.add(record)
     await session.commit()
 
-    # --- 7. Neues Paar ausstellen ---
+    # --- 7. Issue a new pair ---
     return await issue_token_pair(session, user)
 
 
 # ============================================================================
-# 4) LOGOUT (Refresh-Token widerrufen)
+# 4) LOGOUT (revoke the refresh token)
 # ============================================================================
 async def logout(session: AsyncSession, refresh_jwt: str | None) -> None:
     """
-    Macht den Refresh-Token ungültig (revoked=True).
+    Invalidates the refresh token (revoked=True).
 
-    Access-Tokens können nicht widerrufen werden (stateless!). Sie laufen
-    aber automatisch nach access_token_expire_minutes ab — deshalb sind sie
-    ja so kurz. Refresh-Tokens sind lang, deshalb ist Logout wichtig.
+    Access tokens cannot be revoked (stateless!). But they do expire
+    automatically after access_token_expire_minutes — which is precisely why
+    they are so short. Refresh tokens are long, which is why logout matters.
     """
     if not refresh_jwt:
-        return  # nichts zu tun
+        return  # nothing to do
 
     try:
         payload = decode_token(refresh_jwt)
     except Exception:
-        return  # ungültiges Token -> stillschweigend ignorieren (idempotent)
+        return  # invalid token -> silently ignore (idempotent)
 
     if payload.get("type") != "refresh":
         return

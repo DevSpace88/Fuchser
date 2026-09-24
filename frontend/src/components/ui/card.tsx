@@ -1,6 +1,6 @@
-// components/ui/card.tsx — shadcn/ui Card-Bausteine.
-// Eine "Card" ist in mehrere Subkomponenten zerlegt (Header, Title, Content, ...),
-// sodass man sie flexibel zusammensetzen kann.
+// components/ui/card.tsx — shadcn/ui Card building blocks.
+// A "Card" is split into several subcomponents (Header, Title, Content, ...)
+// so that you can compose it flexibly.
 
 import * as React from "react";
 

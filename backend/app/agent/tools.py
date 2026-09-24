@@ -1,22 +1,22 @@
 """
-agent/tools.py — Websuche als Agent-Tool (Stufe 2, PLAN.md)
+agent/tools.py — web search as an agent tool (Stage 2, PLAN.md)
 ============================================================
 
-Zwei Provider, eine Funktion — dasselbe Muster wie in llm.py:
+Two providers, one function — the same pattern as in llm.py:
 
-    Tavily (wenn TAVILY_API_KEY gesetzt)
-        LLM-Such-API, "Standard" in der LangGraph-Welt (langchain-tavily).
+    Tavily (if TAVILY_API_KEY is set)
+        LLM search API, the "standard" in the LangGraph world (langchain-tavily).
 
-    DuckDuckGo via ddgs (DEFAULT — komplett ohne API-Key!)
-        Für Lern-/Dev-Zwecke völlig ausreichend; sync-Library → wir packen
-        sie via asyncio.to_thread in einen Thread (blockiert den Event-Loop
-        nicht — FastAPI-Golden-Regel "async def everywhere").
+    DuckDuckGo via ddgs (DEFAULT — entirely without an API key!)
+        Perfectly sufficient for learning/dev purposes; sync library → we
+        put it into a thread via asyncio.to_thread (doesn't block the
+        event loop — FastAPI golden rule "async def everywhere").
 
-WICHTIG FÜR LERNENDE — Schema vs. Ausführung:
-    `web_search` (das @tool-Objekt) dient nur als SCHEMA fürs LLM
-    (bind_tools). Ausführen tun wir die Suche im Graph-Loop SELBST über
-    `search_web()` — weil wir die rohen Quellen (list[Source]) zusätzlich
-    in den State wollen, nicht nur den Text fürs ToolMessage.
+IMPORTANT FOR LEARNERS — schema vs. execution:
+    `web_search` (the @tool object) serves only as the SCHEMA for the LLM
+    (bind_tools). WE execute the search ourselves in the graph loop via
+    `search_web()` — because we also want the raw sources (list[Source])
+    in the state, not just the text for the ToolMessage.
 """
 
 import asyncio
@@ -33,7 +33,7 @@ MAX_RESULTS = 5
 
 
 class Source(TypedDict):
-    """Eine Quelle aus der Websuche — landet im State und in der DB."""
+    """A source from the web search — lands in the state and in the DB."""
 
     title: str
     url: str
@@ -41,7 +41,7 @@ class Source(TypedDict):
 
 
 # ----------------------------------------------------------------------------
-# Provider 1: DuckDuckGo (ddgs) — kein Key nötig, deshalb Default.
+# Provider 1: DuckDuckGo (ddgs) — no key needed, hence the default.
 # ----------------------------------------------------------------------------
 async def _ddgs_search(query: str, max_results: int) -> list[Source]:
     def _sync() -> list[Source]:
@@ -51,9 +51,9 @@ async def _ddgs_search(query: str, max_results: int) -> list[Source]:
         try:
             raw = list(DDGS().text(query, max_results=max_results))
         except DDGSException as e:
-            # "No results found" / Rate-Limit sind hier ERWARTETE Zustände
-            # (z. B. sehr spezielle deutsche Such-Phrasen) — kein Stacktrace,
-            # nur eine leise Info. Der Agent läuft mit leeren Treffern weiter.
+            # "No results found" / rate limit are EXPECTED states here
+            # (e.g. very specific German search phrases) — no stack trace,
+            # just a quiet info. The agent continues with empty hits.
             logger.info("DuckDuckGo: keine Treffer/Rate-Limit (%s): %s", query[:60], e)
             return []
         return [
@@ -62,12 +62,12 @@ async def _ddgs_search(query: str, max_results: int) -> list[Source]:
             if r.get("href")
         ]
 
-    # ddgs ist synchron -> Threadpool, damit der Event-Loop frei bleibt.
+    # ddgs is synchronous -> thread pool so the event loop stays free.
     return await asyncio.to_thread(_sync)
 
 
 # ----------------------------------------------------------------------------
-# Provider 2: Tavily — aktiv, sobald ein Key konfiguriert ist.
+# Provider 2: Tavily — active as soon as a key is configured.
 # ----------------------------------------------------------------------------
 async def _tavily_search(query: str, max_results: int) -> list[Source]:
     from langchain_tavily import TavilySearch
@@ -82,24 +82,24 @@ async def _tavily_search(query: str, max_results: int) -> list[Source]:
 
 
 # ----------------------------------------------------------------------------
-# Anbieter-Auswahl (wie get_llm(): Key vorhanden -> Tavily, sonst ddgs)
+# Provider selection (like get_llm(): key present -> Tavily, else ddgs)
 # ----------------------------------------------------------------------------
 async def search_web(query: str, max_results: int = MAX_RESULTS) -> list[Source]:
-    """Sucht im Web und liefert normalisierte Quellen (title/url/snippet)."""
+    """Searches the web and returns normalized sources (title/url/snippet)."""
     if settings.tavily_api_key:
         try:
             return await _tavily_search(query, max_results)
-        except Exception:  # noqa: BLE001 — Fallback statt Crash
+        except Exception:  # noqa: BLE001 — fallback instead of a crash
             logger.warning("Tavily-Suche fehlgeschlagen — Fallback auf DuckDuckGo", exc_info=True)
     try:
         return await _ddgs_search(query, max_results)
-    except Exception:  # noqa: BLE001 — Netzwerk weg? Leere Liste, Agent läuft weiter.
+    except Exception:  # noqa: BLE001 — network down? Empty list, agent continues.
         logger.warning("DuckDuckGo-Suche fehlgeschlagen (query=%s)", query, exc_info=True)
         return []
 
 
 def format_sources(sources: list[Source]) -> str:
-    """Formatiert Quellen als Text — so gehen sie ins ToolMessage an das LLM."""
+    """Formats sources as text — this is how they go into the ToolMessage to the LLM."""
     if not sources:
         return "Keine Treffer."
     lines = [
@@ -110,7 +110,7 @@ def format_sources(sources: list[Source]) -> str:
 
 
 # ----------------------------------------------------------------------------
-# Das SCHEMA (für bind_tools) — die Ausführung macht der Graph-Loop selbst.
+# The SCHEMA (for bind_tools) — the graph loop does the execution itself.
 # ----------------------------------------------------------------------------
 @tool
 async def web_search(query: str) -> str:
@@ -120,45 +120,45 @@ async def web_search(query: str) -> str:
     Kurzbeschreibung. Nutze mehrdeutige Begriffe nicht zu allgemein, sondern
     formuliere eine konkrete Suchanfrage.
     """
-    # Wird nur aufgerufen, falls jemand das Tool direkt ausführt (z. B. Tests).
+    # Only called if someone executes the tool directly (e.g. tests).
     return format_sources(await search_web(query))
 
 
 # ----------------------------------------------------------------------------
-# Normierung der Quellenliste — DIE EINE Quelle der Wahrheit für Zitate
+# Normalization of the source list — THE ONE source of truth for citations
 # ----------------------------------------------------------------------------
 def normalize_sources(sources: list, cap: int = 60) -> list:
     """
-    Dedupliziert Quellen nach URL (letzte Sichtung gewinnt, Reihenfolge =
-    Position des letzten Vorkommens) und kappt auf `cap`.
+    Deduplicates sources by URL (last sighting wins, order = position of
+    the last occurrence) and caps at `cap`.
 
-    WICHTIG: Diese Funktion nutzen SYNTHESIZER (Nummerierung im Prompt)
-    UND Service (persistierte Quellenliste) — nur so zeigen [n]-Zitate im
-    Report und die Quellenliste der UI auf DIESELBE Quelle. Zwei getrennte
-    Dedupe-Logiken hatten zur Folge, dass [7] auf der UI auf die falsche
-    URL zeigte oder gar nicht verlinkbar war.
+    IMPORTANT: SYNTHESIZER (numbering in the prompt) AND service
+    (persisted source list) both use this function — only this way do
+    [n] citations in the report and the UI's source list point to the
+    SAME source. Two separate dedupe logics had the consequence that
+    [7] on the UI pointed to the wrong URL or wasn't linkable at all.
     """
     seen: dict[str, dict] = {}
     for s in reversed(sources):
         url = s.get("url", "")
         if url and url not in seen:
             seen[url] = s
-    # seen.values() ist jetzt "neueste Sichtung zuerst" -> umdrehen = älteste
-    # der letzten Sichtungen zuerst; dann kappen.
+    # seen.values() is now "latest sighting first" -> reverse = oldest of
+    # the last sightings first; then cap.
     return list(seen.values())[::-1][:cap]
 
 
 # ----------------------------------------------------------------------------
-# DOKUMENTEN-SUCHE (Stufe 5+): User-Uploads als durchsuchbares Agent-Tool
+# DOCUMENT SEARCH (Stage 5+): user uploads as a searchable agent tool
 # ----------------------------------------------------------------------------
 def make_document_search_tool(documents: list[dict]):
     """
-    Baut ein document_search-Tool über DIE Dokumente dieses Projekts.
+    Builds a document_search tool over exactly THIS project's documents.
 
-    Warum als Factory/Closure? Ein Tool braucht Zugriff auf die Doc-Texte,
-    aber @tool-Schemas sind statisch — also erzeugen wir das Tool PRO LAUF
-    mit den aktuellen Dokumenten im Closure. Naive Stichwortsuche
-    (Fenster um Treffer) statt Embeddings: gut genug, null Infrastruktur.
+    Why a factory/closure? A tool needs access to the document texts,
+    but @tool schemas are static — so we create the tool PER RUN with
+    the current documents in the closure. Naive keyword search (window
+    around hits) instead of embeddings: good enough, zero infrastructure.
     """
     from langchain_core.tools import tool
 
@@ -177,7 +177,7 @@ def make_document_search_tool(documents: list[dict]):
         for name, text in docs:
             lowered = text.lower()
             best_score, best_pos = 0, -1
-            # Grobe Fenster-Suche: Position mit den meisten Term-Treffern
+            # Rough window search: the position with the most term hits
             for term in terms:
                 start = 0
                 while True:
@@ -189,7 +189,7 @@ def make_document_search_tool(documents: list[dict]):
                     if score > best_score:
                         best_score, best_pos = score, pos
                     start = pos + 1
-                    if best_score > len(terms) * 3:  # gut genug
+                    if best_score > len(terms) * 3:  # good enough
                         break
             if best_pos >= 0:
                 snippet = text[max(0, best_pos - 150) : best_pos + 350].replace("\n", " ")

@@ -4,9 +4,9 @@ Revision ID: d4i5j6k7l8m9
 Revises: c3h4i5j6k7l8
 Create Date: 2026-08-29
 
-Umbenennbare Unterhaltungen: `title` ist der Anzeigename (Listen, PDF-
-Titel). NULL -> die Originalfrage wird angezeigt. Die Frage selbst wird
-NIE verändert (sie ist Kontext für Follow-ups und Trace).
+Renamable conversations: `title` is the display name (lists, PDF title).
+NULL -> the original question is shown. The question itself is
+NEVER changed (it is context for follow-ups and the trace).
 """
 
 from typing import Sequence, Union

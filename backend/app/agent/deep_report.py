@@ -1,24 +1,24 @@
 """
-agent/deep_report.py — Deep-Report-Pipeline (Phase 2)
+agent/deep_report.py — the deep-report pipeline (Phase 2)
 =======================================================
 
-Für Fragen mit depth="deep" — echte Langform-Berichte (Ziel: 30+ Seiten):
+For questions with depth="deep" — true long-form reports (target: 30+ pages):
 
-    OUTLINE-PLANER  → Gliederung mit 8–14 Kapiteln (JSON-geplant, als
-                      TODO-Liste live im Chat sichtbar)
-    RESEARCH-FAN-OUT → pro Kapitel 2 Suchfragen, parallele Researcher
-                      (derselbe ReAct-Loop wie im Quick-Modus)
-    REGISTRY        → alle Quellen dedupliziert & global nummeriert [1..n]
-    KAPITEL-AUTOREN → SEQUENZIELL (je Kapitel ein langer Text von 1500–
-                      2500 Wörtern; zitieren [n] aus der Registry; schreiben
-                      mit Blick auf die bisherigen Kapitel für Roten Faden)
-    ASSEMBLY        → Titelblatt, Abstract, Inhaltsverzeichnis, Kapitel,
-                      Literaturverzeichnis (APA/IEEE, deterministisch)
+    OUTLINE PLANNER   → outline with 8–14 chapters (JSON-planned, visible
+                        live in the chat as a TODO list)
+    RESEARCH FAN-OUT  → 2 search queries per chapter, parallel researchers
+                        (the same ReAct loop as in quick mode)
+    REGISTRY          → all sources deduplicated & globally numbered [1..n]
+    CHAPTER WRITERS   → SEQUENTIAL (one long text of 1500–2500 words per
+                        chapter; cite [n] from the registry; write with an
+                        eye on the previous chapters for a common thread)
+    ASSEMBLY          → title page, abstract, table of contents, chapters,
+                        bibliography (APA/IEEE, deterministic)
 
-Warum Kapitel sequenziell? Ein 30-Seiten-Report in EINEM LLM-Call ist
-unmöglich (Output-Limits!). Kapitelweise entsteht Tiefe + jeder Call
-bleibt im Token-Budget. Die Kapitel-Autoren bekommen die Zwischenüberschriften
-der Vorgänger als "roter Faden"-Kontext.
+Why chapters sequentially? A 30-page report in ONE LLM call is impossible
+(output limits!). Chapter by chapter, depth emerges + every call stays
+within the token budget. The chapter writers get the sub-headings of
+their predecessors as "common thread" context.
 """
 
 import asyncio
@@ -41,10 +41,10 @@ logger = logging.getLogger(__name__)
 
 MAX_CHAPTERS = 14
 
-# Backpressure: max. 3 gleichzeitige LLM-Calls im Deep-Modus
-# (DeepSeek-Rate-Limits!). WICHTIG: dieser Semaphore wird von den Deep-Nodes
-# tatsächlich benutzt (chapter_research + chapter_writer) — vorher war er tote
-# Zeile und die parallelen Researcher haben den Provider zugeschossen.
+# Backpressure: max. 3 concurrent LLM calls in deep mode (DeepSeek rate
+# limits!). IMPORTANT: this semaphore is actually used by the deep nodes
+# (chapter_research + chapter_writer) — before, it was a dead line of
+# code and the parallel researchers shot down the provider.
 _deep_semaphore = asyncio.Semaphore(3)
 MIN_CHAPTERS = 6
 WORDS_PER_CHAPTER = (1500, 2500)
@@ -58,15 +58,15 @@ class DeepReportState(TypedDict):
     documents: list[dict]
     context_summary: str
     outline: dict | None  # {"title": …, "abstract": …, "chapters": [{title, focus}]}
-    chapter_findings: Annotated[list[dict], operator.add]  # pro Kapitel: {chapter, answer, sources}
-    chapters_written: list[dict]  # [{title, content}] — wird sequenziell gefüllt (overwrite-Kanal)
+    chapter_findings: Annotated[list[dict], operator.add]  # per chapter: {chapter, answer, sources}
+    chapters_written: list[dict]  # [{title, content}] — filled sequentially (overwrite channel)
     usage: Annotated[list[dict], operator.add]
     citation_style: str  # "apa" | "ieee" | "plain"
     report: str | None
 
 
 # ----------------------------------------------------------------------------
-# 1) OUTLINE-PLANER
+# 1) OUTLINE PLANNER
 # ----------------------------------------------------------------------------
 OUTLINE_PROMPT = """Du bist ein Wissenschaftlicher Outline-Planer. Erstelle eine Gliederung für
 einen
@@ -109,20 +109,20 @@ def _parse_outline_json(text: str) -> dict | None:
 
 
 async def outline_node(state: DeepReportState, llm=None) -> dict:
-    """Plant die Gliederung — die TODO-Liste, die der User live sieht."""
+    """Plans the outline — the TODO list the user sees live."""
     emit("node", node="outline", status="start")
     model = llm or get_llm()
     question = state["question"]
 
-    # RESUME/Re-Run: Steht eine Gliederung im (Checkpoint-)State, wird sie
-    # NICHT neu geplant — 0 Token und die Kapitel-Titel bleiben stabil, damit
-    # der Writer bereits geschriebene Kapitel zuverlässig überspringen kann.
+    # RESUME/re-run: if an outline already sits in the (checkpoint) state,
+    # it is NOT replanned — 0 tokens and the chapter titles stay stable, so
+    # the writer can reliably skip already-written chapters.
     if state.get("outline"):
         emit("outline", outline=state["outline"])
         emit("node", node="outline", status="end", chapters=len(state["outline"]["chapters"]))
         return {"usage": []}
 
-    if model is None:  # Echo-Modus (Tests/ohne Key)
+    if model is None:  # echo mode (tests/without a key)
         outline = {
             "title": f"Fachbericht: {question}",
             "abstract": "Echo-Gliederung.",
@@ -150,7 +150,7 @@ async def outline_node(state: DeepReportState, llm=None) -> dict:
         ),
     )
     outline = _parse_outline_json(str(response.content))
-    if outline is None:  # Fallback: 6 Standard-Kapitel
+    if outline is None:  # fallback: 6 standard chapters
         outline = {
             "title": f"Fachbericht: {question[:80]}",
             "abstract": "",
@@ -169,24 +169,24 @@ async def outline_node(state: DeepReportState, llm=None) -> dict:
     emit("outline", outline=outline)
     emit("node", node="outline", status="end", chapters=len(outline["chapters"]))
 
-    # KEIN interrupt() mehr (User-Entscheidung): Die Gliederung wird als
-    # TODO-Liste im Chat angezeigt, aber die Pipeline läuft DIREKT weiter
-    # — keine Bestätigung nötig, keine zweite Verbindung, kein State-
-    # Verlust bei Reloads oder Rate-Limits. Einfach machen. 🦊
+    # NO more interrupt() (user decision): the outline is displayed as a
+    # TODO list in the chat, but the pipeline continues DIRECTLY — no
+    # confirmation needed, no second connection, no state loss on reloads
+    # or rate limits. Just do it. 🦊
 
     return {"outline": outline, "usage": [extract_usage(response)]}
 
 
 # ----------------------------------------------------------------------------
-# 2) KAPITEL-RECHERCHE (pro Kapitel ReAct-Loop, parallel via Send im Graphen)
+# 2) CHAPTER RESEARCH (ReAct loop per chapter, parallel via Send in the graph)
 # ----------------------------------------------------------------------------
 async def chapter_research_node(state: dict, llm=None) -> dict:
-    """Recherchiert EIN Kapitel (Input kommt per Send mit)."""
+    """Researches ONE chapter (input arrives via Send)."""
     chapter_title = state["chapter_title"]
     focus = state.get("chapter_focus", chapter_title)
 
-    # RESUME: Für dieses Kapitel liegt bereits ein Finding aus einem früheren
-    # (abgebrochenen) Lauf im State — nicht erneut recherchieren (0 Token).
+    # RESUME: a finding from an earlier (aborted) run already sits in the
+    # state for this chapter — don't research it again (0 tokens).
     if state.get("already_researched"):
         return {"chapter_findings": [], "usage": []}
 
@@ -226,8 +226,8 @@ async def chapter_research_node(state: dict, llm=None) -> dict:
 
 def clean_chapter_content(content: str, chapter_title: str) -> str:
     """
-    Entfernt eine eventuell vom LLM vorangestellte redundante Kapitelüberschrift
-    am Anfang des Inhalts, damit sie nach '## {i}. {title}' nicht doppelt erscheint.
+    Removes a redundant chapter heading the LLM may have prefixed to the
+    content, so it doesn't appear twice after '## {i}. {title}'.
     """
     if not content or not content.strip():
         return ""
@@ -267,7 +267,7 @@ def clean_chapter_content(content: str, chapter_title: str) -> str:
 
 
 # ----------------------------------------------------------------------------
-# 3) KAPITEL-AUTOREN (sequenziell — der rote Faden)
+# 3) CHAPTER WRITERS (sequential — the common thread)
 # ----------------------------------------------------------------------------
 WRITER_PROMPT = """Du bist ein wissenschaftlicher Fachautor. Schreibe das Kapitel "{chapter}" für
 den Bericht "{title}".
@@ -298,10 +298,10 @@ Fragen-/Berichtskontext: {question}"""
 
 
 async def chapter_writer_node(state: DeepReportState, llm=None) -> dict:
-    """Schreibt alle Kapitel sequenziell — jedes mit Rotem-Faden-Kontext.
+    """Writes all chapters sequentially — each with common-thread context.
 
-    RESUME: bereits geschriebene Kapitel (state["chapters_written"]) werden
-    übersprungen statt neu geschrieben.
+    RESUME: already-written chapters (state["chapters_written"]) are
+    skipped instead of rewritten.
     """
     emit(
         "node",
@@ -321,7 +321,7 @@ async def chapter_writer_node(state: DeepReportState, llm=None) -> dict:
         for i, s in enumerate(all_sources)
     )
 
-    # RESUME: bereits geschriebene Kapitel übernehmen (Titel -> Inhalt).
+    # RESUME: take over already-written chapters (title -> content).
     written: list[dict] = list(state.get("chapters_written") or [])
     written_titles = {w["title"] for w in written}
     usage: list[dict] = []
@@ -338,7 +338,7 @@ async def chapter_writer_node(state: DeepReportState, llm=None) -> dict:
 
     for index, chapter in enumerate(outline["chapters"], start=1):
         if chapter["title"] in written_titles:
-            continue  # bereits geschrieben (Resume) — nicht erneut schreiben
+            continue  # already written (resume) — don't write again
         emit(
             "chapter",
             status="start",
@@ -372,17 +372,17 @@ async def chapter_writer_node(state: DeepReportState, llm=None) -> dict:
             response = await ainvoke_with_retry(model, prompt, context=chapter_ctx)
         usage.append(extract_usage(response))
         content = str(response.content).strip()
-        # Sprach-Lektor: fremde Schriftzeichen (Gratis-Regex) + Schein-
-        # Anglizismen/Grammatik (Mini-YES/NO-Check). Die Korrektur läuft nur
-        # bei Bedarf — saubere Kapitel kosten KEINE zusätzlichen Tokens.
+        # Language lector: foreign script characters (free regex) +
+        # pseudo-Anglicisms/grammar (mini YES/NO check). The correction runs
+        # only when needed — clean chapters cost NO extra tokens.
         content, polish_usage = await polish_german(model, content, chapter_ctx)
         usage.extend(polish_usage)
         content = clean_chapter_content(content, chapter["title"])
         written.append({"title": chapter["title"], "content": content})
         written_titles.add(chapter["title"])
-        # Live-Fortschritt: fertiges Kapitel sofort in den Stream + Report.
-        # Der Inhalt wird mitgeschickt, damit der Service ihn SOFORT persistiert
-        # (Crash-sicher: fertige Kapitel gehen nie verloren).
+        # Live progress: a finished chapter goes straight into the stream +
+        # report. The content is sent along so the service persists it
+        # IMMEDIATELY (crash-safe: finished chapters are never lost).
         emit(
             "chapter",
             status="done",
@@ -399,11 +399,11 @@ async def chapter_writer_node(state: DeepReportState, llm=None) -> dict:
 
 
 def _assemble(outline: dict, chapters: list[dict], sources: list, style: str) -> str:
-    """Setzt den finalen Bericht zusammen (Titelblatt, Abstract, TOC, Kapitel, Literatur)."""
+    """Assembles the final report (title page, abstract, TOC, chapters, bibliography)."""
     parts: list[str] = [f"# {outline.get('title', 'Fachbericht')}\n"]
     if outline.get("abstract"):
         parts.append(f"> **Abstract:** {outline['abstract']}\n")
-    # Inhaltsverzeichnis
+    # Table of contents
     parts.append("## Inhaltsverzeichnis\n")
     for i, ch in enumerate(chapters, start=1):
         parts.append(f"{i}. {ch['title']}")
@@ -416,7 +416,7 @@ def _assemble(outline: dict, chapters: list[dict], sources: list, style: str) ->
 
 
 # ----------------------------------------------------------------------------
-# 4) GRAPH-BUILDER (Outline → parallele Kapitel-Recherche → Writer → Ende)
+# 4) GRAPH BUILDER (outline → parallel chapter research → writer → end)
 # ----------------------------------------------------------------------------
 def build_deep_report_graph(checkpointer=None, llm=None):
     from langgraph.graph import END, START, StateGraph
@@ -424,9 +424,9 @@ def build_deep_report_graph(checkpointer=None, llm=None):
 
     def fan_out_chapters(state: DeepReportState) -> list[Send]:
         outline = state.get("outline") or {"chapters": []}
-        # RESUME: Kapitel mit bereits vorhandenem Finding (aus dem Checkpoint-
-        # State eines abgebrochenen Laufs) werden per Flag übersprungen —
-        # der Send läuft an, ruft aber kein LLM (keine doppelten Kosten).
+        # RESUME: chapters that already have a finding (from the checkpoint
+        # state of an aborted run) are skipped via a flag — the Send fires,
+        # but calls no LLM (no double costs).
         researched = {f["chapter"] for f in state.get("chapter_findings", []) if f.get("chapter")}
         return [
             Send(

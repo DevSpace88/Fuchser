@@ -1,39 +1,39 @@
 // ============================================================================
-// lib/api.ts — fetch-Wrapper mit JWT-Anhängung + automatischem Refresh
+// lib/api.ts — fetch wrapper with JWT attachment + automatic refresh
 // ============================================================================
 //
-// Diese Datei ist das wichtigste Stück des Frontends fürs LERNEN: Hier sieht
-// man, wie eine SPA mit JWT-basierter Auth umgeht.
+// This file is the most important piece of the frontend for LEARNING: here you
+// can see how an SPA deals with JWT-based auth.
 //
 // ─────────────────────────────────────────────────────────────────────────────
-// WO SPEICHERN WIR DAS TOKEN? (Wichtige Entscheidung!)
+// WHERE DO WE STORE THE TOKEN? (Important decision!)
 // ─────────────────────────────────────────────────────────────────────────────
-// Drei gängige Optionen, jede mit Vor-/Nachteilen:
+// Three common options, each with pros/cons:
 //
-//   1) localStorage  (DAS NUTZEN WIR HIER)
-//      + einfach, überall in JS verfügbar, überlebt Reload.
-//      - SCHLECHT gegen XSS: schädliches JS kann es auslesen.
-//      -> OK für Lernen + interne Tools; für sensible Apps eher nicht.
+//   1) localStorage  (THAT'S WHAT WE USE HERE)
+//      + simple, available everywhere in JS, survives a reload.
+//      - BAD against XSS: malicious JS can read it.
+//      -> OK for learning + internal tools; rather not for sensitive apps.
 //
-//   2) httpOnly-Cookie (vom Backend gesetzt)
-//      + immun gegen XSS (JS kann httpOnly-Cookies NICHT lesen).
-//      - komplexeres Setup (CSRF-Schutz nötig, CORS-credentials).
-//      -> Best-Practice für Produktion.
+//   2) httpOnly cookie (set by the backend)
+//      + immune to XSS (JS can NOT read httpOnly cookies).
+//      - more complex setup (CSRF protection needed, CORS credentials).
+//      -> best practice for production.
 //
-//   3) In-Memory (nur in einer Variable)
-//      + immun gegen XSS.
-//      - bei Reload weg -> Refresh beim Start nötig.
+//   3) in-memory (only in a variable)
+//      + immune to XSS.
+//      - gone on reload -> refresh needed at startup.
 //
-// In Produktion empfiehlt sich: Access-Token IN-MEMORY, Refresh-Token im
-// httpOnly-Cookie. Hier für Lernzwecke: localStorage (einfach zu verstehen).
-// Siehe auch README "Erweiterungen".
+// For production the recommendation is: access token IN-MEMORY, refresh token
+// in an httpOnly cookie. Here, for learning purposes: localStorage (easy to
+// understand). See also the README section "Erweiterungen" (extensions).
 
 const ACCESS_TOKEN_KEY = "app.access_token";
 const REFRESH_TOKEN_KEY = "app.refresh_token";
 
 // ----------------------------------------------------------------------------
-// Token-Storage: dünner Wrapper um localStorage, damit wir nur an EINER Stelle
-// das "wie" ändern müssen (z. B. später auf Cookie umstellen).
+// Token storage: thin wrapper around localStorage so that we only need to
+// change the "how" in ONE place (e.g. switch to a cookie later).
 // ----------------------------------------------------------------------------
 export const tokenStore = {
   getAccess(): string | null {
@@ -53,7 +53,7 @@ export const tokenStore = {
 };
 
 // ----------------------------------------------------------------------------
-// Typen, die zum Backend-Schema passen (siehe backend/app/schemas/auth.py).
+// Types that match the backend schema (see backend/app/schemas/auth.py).
 // ----------------------------------------------------------------------------
 export interface User {
   id: string;
@@ -72,17 +72,17 @@ export interface TokenPair {
 }
 
 // ----------------------------------------------------------------------------
-// REFRESH-LOGIK
+// REFRESH LOGIC
 // ----------------------------------------------------------------------------
-// WICHTIG: wir müssen verhindern, dass BEI MEHREREN gleichzeitigen 401-Requests
-// JEDER einen eigenen Refresh anstößt (Race-Condition). Lösung: eine einzelne
-// "in-flight"-Promise, die alle warten.
+// IMPORTANT: we must prevent EVERY one of several simultaneous 401 requests
+// from triggering its own refresh (race condition). Solution: a single
+// "in-flight" promise that all of them wait for.
 let refreshPromise: Promise<string | null> | null = null;
 
-// Exportiert, weil auch lib/sse.ts ihn nutzt (Streaming braucht denselben
-// 401→Refresh→Retry-Flow wie apiFetch, kann aber nicht auf JSON warten).
+// Exported because lib/sse.ts also uses it (streaming needs the same
+// 401→refresh→retry flow as apiFetch, but cannot wait for JSON).
 export async function doRefresh(): Promise<string | null> {
-  // Wenn schon ein Refresh läuft, denselben Promise wiederverwenden.
+  // If a refresh is already running, reuse the same promise.
   if (refreshPromise) return refreshPromise;
 
   const refresh = tokenStore.getRefresh();
@@ -96,7 +96,7 @@ export async function doRefresh(): Promise<string | null> {
         body: JSON.stringify({ refresh_token: refresh }),
       });
       if (!resp.ok) {
-        // Refresh fehlgeschlagen (abgelaufen/revoked) -> User muss neu login.
+        // Refresh failed (expired/revoked) -> user must log in again.
         tokenStore.clear();
         return null;
       }
@@ -104,7 +104,7 @@ export async function doRefresh(): Promise<string | null> {
       tokenStore.set(data.access_token, data.refresh_token);
       return data.access_token;
     } finally {
-      // Promise zurücksetzen, damit ein späterer Refresh wieder neu starten kann.
+      // Reset the promise so a later refresh can start anew.
       refreshPromise = null;
     }
   })();
@@ -113,10 +113,10 @@ export async function doRefresh(): Promise<string | null> {
 }
 
 // ----------------------------------------------------------------------------
-// Proaktiver Refresh: Ablaufdatum aus dem JWT lesen (Base64-Dekodierung des
-// Payloads — keine Verifikation nötig, der Server prüft eh) und VOR dem
-// Request erneuern, wenn der Token in <30s abläuft. So entstehen gar keine
-// sichtbaren 401er mehr durch abgelaufene Access-Tokens.
+// Proactive refresh: read the expiry date from the JWT (base64-decoding the
+// payload — no verification needed, the server checks it anyway) and renew
+// BEFORE the request if the token expires in <30s. That way no more visible
+// 401s ever occur due to expired access tokens.
 // ----------------------------------------------------------------------------
 function tokenExpiresInMs(): number | null {
   const token = tokenStore.getAccess();
@@ -127,32 +127,32 @@ function tokenExpiresInMs(): number | null {
     );
     return (payload.exp ?? 0) * 1000 - Date.now();
   } catch {
-    return null; // kaputtes Token -> Server entscheidet
+    return null; // broken token -> server decides
   }
 }
 
 export async function getFreshAccessToken(): Promise<string | null> {
   const inMs = tokenExpiresInMs();
   if (inMs !== null && inMs > 30_000) return tokenStore.getAccess();
-  return doRefresh(); // rechtzeitig (oder gar nicht mehr) erneuern
+  return doRefresh(); // renew in time (or not at all anymore)
 }
 
 // ----------------------------------------------------------------------------
-// apiFetch — die zentrale Fetch-Funktion für ALLE API-Aufrufe.
+// apiFetch — the central fetch function for ALL API calls.
 // ----------------------------------------------------------------------------
-// Sie macht DREI Dinge automatisch:
-//   1) JWT als Authorization-Header anhängen (falls vorhanden).
-//   2) JSON senden/empfangen (Content-Type + parse).
-//   3) Bei 401 EINMALIG einen Refresh versuchen und den Request wiederholen.
+// It does THREE things automatically:
+//   1) attach the JWT as the Authorization header (if present).
+//   2) send/receive JSON (Content-Type + parse).
+//   3) on 401, attempt ONE refresh and retry the request.
 //
-// Aufruf aus Komponenten:
+// Called from components:
 //   const me = await apiFetch<User>("/api/v1/auth/me");
 //   const users = await apiFetch<User[]>("/api/v1/users");
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  // Hilfsfunktion: Request MIT optionalem Access-Token ausführen.
+  // Helper: run the request WITH an optional access token.
   const run = (accessToken: string | null): Promise<Response> => {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -164,22 +164,22 @@ export async function apiFetch<T>(
     return fetch(path, { ...options, headers });
   };
 
-  // Proaktiver Refresh statt blind losschicken (vermeidet die 401-Runde).
+  // Proactive refresh instead of sending blindly (avoids the 401 round trip).
   let resp = await run(await getFreshAccessToken());
 
-  // ───── 401 -> einmal Refresh versuchen (Fallback, z. B. Revocation) ─────
+  // ───── 401 -> try one refresh (fallback, e.g. revocation) ─────
   if (resp.status === 401) {
     const newAccess = await doRefresh();
     if (newAccess) {
-      // Refresh erfolgreich -> Request mit neuem Token nochmal.
+      // Refresh successful -> repeat the request with the new token.
       resp = await run(newAccess);
     }
   }
 
-  // ───── Fehlerbehandlung ─────
+  // ───── Error handling ─────
   if (!resp.ok) {
-    // Versuchen, eine detail-Message aus der Antwort zu extrahieren
-    // (FastAPI liefert { "detail": "..." } oder { "detail": [{ "msg": "..." }] }).
+    // Try to extract a detail message from the response
+    // (FastAPI returns { "detail": "..." } or { "detail": [{ "msg": "..." }] }).
     let detail = `HTTP ${resp.status}`;
     try {
       const body = await resp.json();
@@ -200,17 +200,17 @@ export async function apiFetch<T>(
         detail = body.message;
       }
     } catch {
-      /* kein JSON -> detail beim HTTP-Code belassen */
+      /* no JSON -> keep the detail at the HTTP code */
     }
     throw new ApiError(resp.status, detail);
   }
 
-  // 204 No Content -> nichts parsen.
+  // 204 No Content -> nothing to parse.
   if (resp.status === 204) return undefined as T;
   return (await resp.json()) as T;
 }
 
-// Eigene Error-Klasse, damit Komponenten auf den Statuscode reagieren können.
+// Own error class so components can react to the status code.
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);

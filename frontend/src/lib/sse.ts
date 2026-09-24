@@ -1,17 +1,17 @@
 // ============================================================================
-// lib/sse.ts — Server-Sent-Events über fetch-Streaming
+// lib/sse.ts — server-sent events via fetch streaming
 // ============================================================================
 //
-// WARUM nicht das eingebaute EventSource?
-//   * EventSource kann NUR GET — unser Run-Endpunkt ist aber POST.
-//   * EventSource kann keine Authorization-Header setzen.
-//   Also: fetch + ReadableStream und das SSE-Textformat selbst parsen.
+// WHY not the built-in EventSource?
+//   * EventSource can only do GET — but our run endpoint is POST.
+//   * EventSource cannot set Authorization headers.
+//   So: fetch + ReadableStream, and we parse the SSE text format ourselves.
 //
-// Das Protokoll (siehe PLAN.md §4): Frames der Form
+// The protocol (see PLAN.md §4): frames of the form
 //   event: token\n
 //   data: {"text": "..."}\n
 //   \n
-// Getrennt durch LEERZEILEN (\n\n). Wir puffern Chunks und schneiden Frames heraus.
+// Separated by BLANK LINES (\n\n). We buffer chunks and cut out frames.
 
 import { doRefresh, getFreshAccessToken } from "./api";
 
@@ -33,12 +33,12 @@ export async function streamSSE(
         Accept: "text/event-stream",
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
-      signal, // Stop-Button: fetch abbrechen beendet auch den Server-Stream
+      signal, // stop button: aborting fetch also ends the server stream
     });
 
   let resp = await run(await getFreshAccessToken());
 
-  // Gleiches 401→Refresh→Retry-Muster wie apiFetch (einmalig).
+  // Same 401→refresh→retry pattern as apiFetch (once).
   if (resp.status === 401) {
     const newAccess = await doRefresh();
     if (newAccess) resp = await run(newAccess);
@@ -47,7 +47,7 @@ export async function streamSSE(
     throw new Error(`Stream fehlgeschlagen (HTTP ${resp.status})`);
   }
 
-  // Text-Strom lesen und Frames an der Leerzeile splitten.
+  // Read the text stream and split frames at the blank line.
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -63,7 +63,7 @@ export async function streamSSE(
     try {
       onEvent({ event, data: JSON.parse(dataLines.join("\n")) });
     } catch {
-      onEvent({ event, data: dataLines.join("\n") }); // Fallback: Roh-Text
+      onEvent({ event, data: dataLines.join("\n") }); // fallback: raw text
     }
   };
 
@@ -79,5 +79,5 @@ export async function streamSSE(
       if (frame.trim()) handleFrame(frame);
     }
   }
-  if (buffer.trim()) handleFrame(buffer); // letzter Frame ohne Leerzeile
+  if (buffer.trim()) handleFrame(buffer); // last frame without a blank line
 }

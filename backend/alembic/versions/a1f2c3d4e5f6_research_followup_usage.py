@@ -4,10 +4,10 @@ Revision ID: a1f2c3d4e5f6
 Revises: 9d4c2d7ecc54
 Create Date: 2026-08-29
 
-Stufe 5 (PLAN.md):
-    * parent_id: Follow-up-Fragen verweisen auf die Ursprungs-Recherche
-      (und laufen im SELBEN LangGraph-Thread → der Agent "erinnert" sich).
-    * usage: Token-Verbrauch pro Lauf ({input_tokens, output_tokens, ...}).
+Stage 5 (PLAN.md):
+    * parent_id: follow-up questions reference the original research
+      (and run in the SAME LangGraph thread → the agent "remembers").
+    * usage: token consumption per run ({input_tokens, output_tokens, ...}).
 """
 
 from typing import Sequence, Union

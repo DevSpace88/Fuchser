@@ -1,19 +1,19 @@
 // ============================================================================
-// lib/auth.tsx — React Context für den Login-State
+// lib/auth.tsx — React context for the login state
 // ============================================================================
 //
-// Dieser Context ist die EINE Stelle, an der die App weiß, "wer ist eingeloggt".
-// Alle Komponenten nutzen den useAuth()-Hook, um:
-//   - den aktuellen User zu lesen,
-//   - sich einzuloggen / auszuloggen / zu registrieren,
-//   - zu prüfen, ob noch geladen wird.
+// This context is the ONE place where the app knows "who is logged in".
+// All components use the useAuth() hook to:
+//   - read the current user,
+//   - log in / log out / register,
+//   - check whether loading is still in progress.
 //
-// Aufbau:
-//   <AuthProvider>        // umhüllt die ganze App (siehe main.tsx)
+// Structure:
+//   <AuthProvider>        // wraps the whole app (see main.tsx)
 //     <App />
 //   </AuthProvider>
 //
-// In einer Komponente:
+// In a component:
 //   const { user, login, logout } = useAuth();
 
 import {
@@ -26,8 +26,8 @@ import {
 import { apiFetch, tokenStore, type TokenPair, type User } from "@/lib/api";
 
 interface AuthContextValue {
-  user: User | null; // null = nicht eingeloggt
-  loading: boolean; // true = initial noch nicht gecheckt
+  user: User | null; // null = not logged in
+  loading: boolean; // true = initial check not done yet
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName?: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -39,10 +39,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // --- BEIM START: prüfen, ob wir noch gültige Tokens haben ---
-  // Wenn ein Access-Token im localStorage liegt, versuchen wir /auth/me.
-  // Bei Erfolg sind wir eingeloggt; bei Misserfolg (Token abgelaufen etc.)
-  // kümmert sich apiFetch intern um den Refresh.
+  // --- AT STARTUP: check whether we still have valid tokens ---
+  // If an access token is in localStorage, we try /auth/me.
+  // On success we are logged in; on failure (token expired etc.)
+  // apiFetch takes care of the refresh internally.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -76,20 +76,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // --- REGISTER ---
   async function register(email: string, password: string, fullName?: string) {
-    // 1) Account anlegen.
+    // 1) Create the account.
     await apiFetch<User>("/api/v1/auth/register", {
       method: "POST",
       body: JSON.stringify({ email, password, full_name: fullName ?? null }),
     });
-    // 2) Sofort einloggen (komfortabel, der User will sich nicht doppelt
-    //    durchklicken). In echten Apps würde man hier oft eine E-Mail-
-    //    Verifizierung zwischenschalten.
+    // 2) Log in immediately (convenient — the user does not want to click
+    //    through twice). In real apps an email verification step would
+    //    often be inserted here.
     await login(email, password);
   }
 
   // --- LOGOUT ---
   async function logout() {
-    // Backend bescheid geben (Refresh-Token widerrufen).
+    // Tell the backend (revoke the refresh token).
     const refresh = tokenStore.getRefresh();
     try {
       await apiFetch("/api/v1/auth/logout", {
@@ -97,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ refresh_token: refresh }),
       });
     } catch {
-      // nicht schlimm — lokal loggen wir uns sowieso aus.
+      // not a problem — we log out locally regardless.
     }
     tokenStore.clear();
     setUser(null);
@@ -110,9 +110,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// Hook für Komponenten.
-// Wirft bewusst einen Fehler, wenn useAuth AUSSERHALB des Providers aufgerufen
-// wird — das ist ein Programmierfehler und sollte早期 auffallen.
+// Hook for components.
+// Deliberately throws an error when useAuth is called OUTSIDE the provider —
+// that is a programming error and should be caught early.
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth muss innerhalb eines <AuthProvider> genutzt werden.");

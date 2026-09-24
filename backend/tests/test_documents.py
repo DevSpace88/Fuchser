@@ -1,8 +1,9 @@
 """
-tests/test_documents.py — Dokumenten-Upload + document_search-Tool
-===================================================================
-Tested ohne echte schwere Dateien: TXT direkt, DOCX mit python-docx
-generiert, Scan-PDF-Fall simuliert (Extraktion liefert nichts -> 422).
+tests/test_documents.py — Document upload + document_search tool
+================================================================
+
+Tested without real heavy files: TXT directly, DOCX generated with
+python-docx, scan-PDF case simulated (extraction yields nothing -> 422).
 """
 
 import io
@@ -15,7 +16,7 @@ from tests.test_research import _register_and_login, auth_header
 
 
 def _make_docx(text: str) -> bytes:
-    """Erzeugt eine echte DOCX im Speicher."""
+    """Creates a real DOCX in memory."""
     doc = DocxDocument()
     doc.add_paragraph(text)
     buffer = io.BytesIO()
@@ -81,7 +82,7 @@ async def test_upload_unsupported_and_empty_rejected(client):
         )
     ).json()["id"]
 
-    # Unbekannter Typ
+    # Unknown type
     resp = await client.post(
         f"/api/v1/research/{pid}/documents",
         headers=auth_header(token),
@@ -89,7 +90,7 @@ async def test_upload_unsupported_and_empty_rejected(client):
     )
     assert resp.status_code == 422
 
-    # "Leere" Extraktion (Scan-Simulation): txt mit nur Whitespace
+    # "Empty" extraction (scan simulation): txt with only whitespace
     resp = await client.post(
         f"/api/v1/research/{pid}/documents",
         headers=auth_header(token),
@@ -135,8 +136,8 @@ async def test_document_search_tool_finds_terms():
 
 @pytest.mark.asyncio
 async def test_followup_inherits_chain_documents(client, test_session):
-    """Ketten-Vererbung: Ein Doc am ELTERN-Projekt muss beim Follow-up-Lauf
-    verfügbar sein (der Agent lädt kettenweit — User-Wunsch)."""
+    """Chain inheritance: a doc on the PARENT project must be available
+    to the follow-up run (the agent loads chain-wide — user request)."""
     from uuid import UUID as _UUID
 
     from sqlmodel import select as _select
@@ -158,7 +159,7 @@ async def test_followup_inherits_chain_documents(client, test_session):
         )
     ).json()
 
-    # Doc am PARENT hochladen …
+    # Upload a doc to the PARENT …
     resp = await client.post(
         f"/api/v1/research/{parent['id']}/documents",
         headers=auth_header(token),
@@ -166,7 +167,7 @@ async def test_followup_inherits_chain_documents(client, test_session):
     )
     assert resp.status_code == 201
 
-    # … muss beim CHILD über die Ketten-Sicht auftauchen.
+    # … must show up on the CHILD via the chain view.
     child_row = (
         await test_session.exec(
             _select(ResearchProject).where(ResearchProject.id == _UUID(child["id"]))
@@ -203,7 +204,7 @@ async def test_delete_document(client):
 
 @pytest.mark.asyncio
 async def test_list_documents_chain_param(client):
-    """?chain=true: Docs des PARENTS erscheinen in der Liste des CHILDs."""
+    """?chain=true: the PARENT's docs appear in the CHILD's list."""
     token = await _register_and_login(client, "alice@example.com")
     parent = (
         await client.post(
@@ -226,10 +227,10 @@ async def test_list_documents_chain_param(client):
     plain = await client.get(
         f"/api/v1/research/{child['id']}/documents", headers=auth_header(token)
     )
-    assert plain.json() == []  # ohne chain: nur eigene (keine)
+    assert plain.json() == []  # without chain: only its own (none)
 
     chained = await client.get(
         f"/api/v1/research/{child['id']}/documents?chain=true", headers=auth_header(token)
     )
     names = [d["filename"] for d in chained.json()]
-    assert "buch2.txt" in names  # mit chain: erbt Parent-Dateien
+    assert "buch2.txt" in names  # with chain: inherits parent files

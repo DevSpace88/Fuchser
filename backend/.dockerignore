@@ -1,11 +1,11 @@
-# Was NICHT in den Docker-Build-Context soll (spart Zeit + Bandbreite).
-# WICHTIG: uv.lock und pyproject.toml müssen DRIN bleiben, sonst schlägt
-# `uv sync --frozen` fehl!
+# What should NOT go into the Docker build context (saves time + bandwidth).
+# IMPORTANT: uv.lock and pyproject.toml must STAY IN, otherwise
+# `uv sync --frozen` fails!
 
-# Virtuelle Umgebung (lokal erzeugt) — würde hunderte MB in den Context schieben.
+# Virtual environment (created locally) — would push hundreds of MB into the context.
 .venv/
 
-# Cache-Verzeichnisse
+# Cache directories
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -15,7 +15,7 @@ __pycache__/
 .idea/
 .vscode/
 
-# Env (Secrets niemals ins Image!)
+# Env (never bake secrets into the image!)
 .env
 .env.*
 

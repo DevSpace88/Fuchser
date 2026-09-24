@@ -1,15 +1,15 @@
 """
-nodes/synthesizer.py — DER REPORT-SCHREIBER (Stufe 3)
+nodes/synthesizer.py — THE REPORT WRITER (Stage 3)
 ======================================================
 
-Der Synthesizer läuft NACH dem Join aller Researcher (Superstep-Semantik:
-die Kante researcher -> synthesizer feuert erst, wenn ALLE Sends fertig
-sind) und bekommt im State die gemergten findings + sources.
+The synthesizer runs AFTER the join of all researchers (superstep
+semantics: the edge researcher -> synthesizer fires only when ALL sends
+are done) and receives the merged findings + sources in the state.
 
-Er schreibt einen Markdown-Report mit [n]-Zitaten passend zur nummerierten
-Quellenliste — und genau DIESER Node streamt die Token, die im Frontend
-als "der Report entsteht live" ankommen (Service filtert per
-langgraph_node-Metadatum).
+It writes a Markdown report with [n] citations matching the numbered
+source list — and THIS node is exactly the one streaming the tokens that
+arrive in the frontend as "the report is being written live" (the
+service filters via the langgraph_node metadata).
 """
 
 import logging
@@ -25,18 +25,19 @@ from app.agent.usage import extract_usage
 
 logger = logging.getLogger(__name__)
 
-# Erkennt einen angehängten Quellen-/Literatur-Abschnitt (## Quellen,
-# ### Literaturverzeichnis, ## Sources …) bis zum Textende.
+# Detects an appended sources/bibliography section (## Quellen,
+# ### Literaturverzeichnis, ## Sources …) through to the end of the text.
 _SOURCES_SECTION = re.compile(
     r"\n+#{1,3}\s*(?:Quellen|Quellenangaben|Quellenverzeichnis|Literatur(?:verzeichnis)?|Sources|References)"
     r"\s*:?\s*\n.*",
     re.IGNORECASE | re.DOTALL,
 )
 
-# Marker als PURE TEXTZEILE (ohne #-Überschrift) — Modelle schreiben die
-# Liste gern auch ganz ohne Markdown-Header. Wir prüfen zusätzlich, dass
-# der Marker im HINTEREN Teil liegt und dahinter mehrere URLs stehen —
-# nur dann ist es wirklich ein Quellen-Dump und kein normaler Satz.
+# Markers as a PURE TEXT LINE (without a # heading) — models also like to
+# write the list without any Markdown header at all. We additionally check
+# that the marker sits in the LATTER part of the text with several URLs
+# after it — only then is it really a source dump and not a normal
+# sentence.
 _PLAIN_MARKERS = {
     "quellen",
     "quellenangaben",
@@ -50,14 +51,14 @@ _PLAIN_MARKERS = {
 
 def strip_sources_section(report: str) -> str:
     """
-    Entfernt Quellen-Abschnitte am Report-Ende — in zwei Varianten:
+    Removes sources sections at the end of the report — in two variants:
 
-      1. Markdown-Überschrift ("## Quellen" o. ä.)
-      2. Pure Textzeile "Quellen" (ohne #) — nur wenn sie im hinteren
-         Drittel liegt und danach mindestens 2 URLs vorkommen (damit ein
-         legitimer Satz wie "Die Quellen sind vielfältig" NICHT fliegt).
+      1. Markdown heading ("## Quellen" or similar)
+      2. Pure text line "Quellen" (without #) — only if it sits in the
+         rear third and at least 2 URLs follow after it (so that a
+         legitimate sentence like "Die Quellen sind vielfältig" is NOT cut).
 
-    Reine [n]-Zitate im Fließtext bleiben unberührt.
+    Plain [n] citations in the running text remain untouched.
     """
     text = _SOURCES_SECTION.sub("", report).rstrip()
     lines = text.splitlines()
@@ -72,8 +73,8 @@ def strip_sources_section(report: str) -> str:
 
 
 def _numbered_sources(sources: list) -> list:
-    """Normiert Quellen über die GEMEINSAME Funktion (siehe tools.py) —
-    dieselbe Liste bekommt später auch die UI, damit [n]-Zitate stimmen."""
+    """Normalizes sources via the SHARED function (see tools.py) —
+    the UI later gets the same list, so the [n] citations line up."""
     from app.agent.tools import normalize_sources
 
     return normalize_sources(sources)
@@ -81,12 +82,12 @@ def _numbered_sources(sources: list) -> list:
 
 async def synthesizer_node(state: dict, llm: BaseChatModel | None = None) -> dict:
     """
-    findings + sources rein → {'report': str} raus.
+    findings + sources in → {'report': str} out.
 
-    WICHTIG: sources sind ein REDUCER-Kanal (operator.add). Würde auch der
-    Synthesizer seine (deduplizierte) Liste zurückschreiben, würde der
-    Reducer sie ZUSÄTZLICH anhängen → jede Quelle doppelt. Die Dedupe
-    macht deshalb der Service, wenn er den finalen Stand persistiert.
+    IMPORTANT: sources is a REDUCER channel (operator.add). If the
+    synthesizer also wrote back its (deduplicated) list, the reducer
+    would append it ON TOP → every source twice. That's why the service
+    does the dedupe when it persists the final state.
     """
     question = state["question"]
     findings = state.get("findings", [])
@@ -95,7 +96,7 @@ async def synthesizer_node(state: dict, llm: BaseChatModel | None = None) -> dic
 
     model = llm or get_llm()
     if model is None:
-        # Echo-Modus: Findings stumpf aneinanderhängen (testbar ohne Key).
+        # Echo mode: blindly concatenate the findings (testable without a key).
         parts = [f"### {f['sub_question']}\n{f['answer']}" for f in findings]
         emit("node", node="synthesizer", status="end", echo=True)
         return {"report": "## Echo-Report\n\n" + "\n\n".join(parts)}
@@ -132,9 +133,9 @@ async def synthesizer_node(state: dict, llm: BaseChatModel | None = None) -> dic
         ]
     )
     emit("node", node="synthesizer", status="end")
-    # Fallback, falls das Modell doch eine Quellenliste anhängt (Modelle
-    # sind stubenhochreinigend …): Abschnitt abschneiden — die UI rendert
-    # die Quellen selbst, mit klickbaren Links.
+    # Fallback in case the model appends a sources list anyway (models
+    # are compulsive tidiers …): cut the section — the UI renders the
+    # sources itself, with clickable links.
     return {
         "report": strip_sources_section(str(response.content)),
         "usage": [extract_usage(response)],

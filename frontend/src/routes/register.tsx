@@ -1,4 +1,4 @@
-// routes/register.tsx — Registrierungs-Seite.
+// routes/register.tsx — registration page.
 
 import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate, Link } from "react-router-dom";
@@ -13,7 +13,7 @@ export function RegisterPage() {
   const { register, user, loading } = useAuth();
   const navigate = useNavigate();
 
-  // Bereits eingeloggt? Registrieren macht dann keinen Sinn -> Dashboard.
+  // Already logged in? Registering then makes no sense -> dashboard.
   if (!loading && user) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -28,16 +28,16 @@ export function RegisterPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    // Client-seitiger Abgleich VOR dem Request: Tippfehler im Passwort
-    // merkt man so sofort — der Server müsste sie sonst per E-Mail-Rücksetz-
-    // Flow "heilen" (den gibt es hier noch nicht).
+    // Client-side comparison BEFORE the request: this way you notice a typo
+    // in the password immediately — otherwise the server would have to "heal"
+    // it via an email reset flow (which does not exist here yet).
     if (password !== confirmPassword) {
       setError("Die Passwörter stimmen nicht überein.");
       return;
     }
     setSubmitting(true);
     try {
-      // register() legt den Account an UND loggt direkt ein.
+      // register() creates the account AND logs you in directly.
       await register(email, password, fullName || undefined);
       navigate("/dashboard", { replace: true });
     } catch (err) {
@@ -98,8 +98,8 @@ export function RegisterPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 autoComplete="new-password"
-                // Live-Feedback: Feld bekommt roten Ring, sobald beide
-                // gefüllt sind und nicht übereinstimmen.
+                // Live feedback: the field gets a red ring as soon as both
+                // are filled in and do not match.
                 className={
                   confirmPassword && password !== confirmPassword
                     ? "border-destructive focus-visible:ring-destructive"

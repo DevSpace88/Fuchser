@@ -1,8 +1,9 @@
 """
-tests/test_deep_report.py — Deep-Report-Pipeline (Phase 2)
-===========================================================
-Outline-Planung, Kapitel-Recherche (Fan-out), sequenzielle Kapitel-Autoren,
-Assembly mit Inhaltsverzeichnis + Literaturverzeichnis (APA/IEEE).
+tests/test_deep_report.py — Deep report pipeline (Phase 2)
+==========================================================
+
+Outline planning, chapter research (fan-out), sequential chapter writers,
+assembly with table of contents + bibliography (APA/IEEE).
 """
 
 import pytest
@@ -19,23 +20,23 @@ from app.agent.deep_report import (
 
 
 def test_clean_chapter_content():
-    # 1) Reines Markdown-Heading mit demselben Titel
+    # 1) A pure Markdown heading with the same title
     raw1 = "## US-Konzerne und Scale-ups\n\nErster Absatz mit Text."
     assert clean_chapter_content(raw1, "US-Konzerne und Scale-ups") == "Erster Absatz mit Text."
 
-    # 2) Heading mit Nummerierung
+    # 2) Heading with numbering
     raw2 = "### 3. US-Konzerne und Scale-ups\n\nErster Absatz."
     assert clean_chapter_content(raw2, "US-Konzerne und Scale-ups") == "Erster Absatz."
 
-    # 3) Fettgedruckte Überschrift
+    # 3) Bold heading
     raw3 = "**US-Konzerne und Scale-ups**\n\nErster Absatz."
     assert clean_chapter_content(raw3, "US-Konzerne und Scale-ups") == "Erster Absatz."
 
-    # 4) Unterabschnitt (3.1 o.ä.) darf NICHT gelöscht werden
+    # 4) A subsection (3.1 etc.) must NOT be deleted
     raw4 = "### 3.1 Einführung\n\nErster Absatz."
     assert clean_chapter_content(raw4, "US-Konzerne und Scale-ups") == raw4.strip()
 
-    # 5) Normaler Fließtext ohne Überschrift bleibt erhalten
+    # 5) Plain body text without a heading stays as is
     raw5 = "In diesem Kapitel untersuchen wir US-Konzerne."
     assert clean_chapter_content(raw5, "US-Konzerne und Scale-ups") == raw5
 
@@ -56,12 +57,12 @@ def test_bibliography_styles():
     sources = [{"title": "LangGraph Doku", "url": "https://docs.langchain.com/x/2024/guide"}]
     apa = format_bibliography(sources, "apa")
     ieee = format_bibliography(sources, "ieee")
-    assert "docs.langchain.com" in apa and "*" in apa  # institutioneller Autor + Kursiv
+    assert "docs.langchain.com" in apa and "*" in apa  # institutional author + italics
     assert "[1]" in ieee and "Verfügbar:" in ieee
 
 
 class DeepFakeLLM:
-    """Antwortet je Prompt-Inhalt: Outline-JSON, ReAct-Toolcall/Final, Kapiteltext."""
+    """Responds based on prompt content: outline JSON, ReAct tool call/final, chapter text."""
 
     def bind_tools(self, tools):
         return self
@@ -85,7 +86,7 @@ class DeepFakeLLM:
                 content=f"### Unterabschnitt\n\nInhalt zu {last_user.split(chr(10))[0][:30]} mit Zitat [1]. "
                 * 30
             )
-        # ReAct-Runde 1: Tool wünschen
+        # ReAct round 1: request a tool call
         return AIMessage(
             content="",
             tool_calls=[
@@ -109,7 +110,7 @@ async def test_outline_node_emits_and_parses():
 
 @pytest.mark.asyncio
 async def test_deep_graph_full_run(monkeypatch):
-    """Outline -> 3 Kapitel-Recherchen (fan-out) -> Writer -> Assembly."""
+    """Outline -> 3 chapter researches (fan-out) -> writer -> assembly."""
     import app.agent.nodes.researcher as researcher_mod
 
     async def fake_search(query, max_results=5):
@@ -134,18 +135,18 @@ async def test_deep_graph_full_run(monkeypatch):
         }
     )
 
-    # 3 Kapitel geschrieben, mit Roem-Faden (sequenziell)
+    # 3 chapters written, with a red thread (sequential)
     assert [c["title"] for c in result["chapters_written"]] == [
         "Grundlagen",
         "Architektur",
         "Fazit",
     ]
-    # Assembly: TOC + nummerierte Kapitel + Literaturverzeichnis
+    # Assembly: TOC + numbered chapters + bibliography
     report = result["report"]
     assert "## Inhaltsverzeichnis" in report
     assert "## 1. Grundlagen" in report and "## 3. Fazit" in report
     assert "Literaturverzeichnis" in report
-    # Usage aus outline + researcher + writer
+    # Usage from outline + researcher + writer
     assert len(result["usage"]) >= 5
 
 
@@ -164,7 +165,7 @@ async def test_writer_echo_mode():
 
 @pytest.mark.asyncio
 async def test_writer_resume_skips_written_chapters():
-    """RESUME: bereits geschriebene Kapitel werden übersprungen, nicht neu geschrieben."""
+    """RESUME: chapters already written are skipped, not rewritten."""
     llm = DeepFakeLLM()
     state = {
         "question": "FastAPI?",
@@ -182,31 +183,31 @@ async def test_writer_resume_skips_written_chapters():
         "chapters_written": [{"title": "Grundlagen", "content": "### Alt\n\nBereits geschrieben."}],
     }
     result = await chapter_writer_node(state, llm=llm)
-    # Reihenfolge entspricht der Gliederung; Kapitel 1 bleibt unverändert erhalten.
+    # The order follows the outline; chapter 1 is preserved unchanged.
     assert [c["title"] for c in result["chapters_written"]] == [
         "Grundlagen",
         "Architektur",
         "Fazit",
     ]
     assert result["chapters_written"][0]["content"] == "### Alt\n\nBereits geschrieben."
-    # Die restlichen Kapitel wurden neu geschrieben (nicht leer).
+    # The remaining chapters were newly written (not empty).
     assert result["chapters_written"][1]["content"].strip() != ""
     assert result["chapters_written"][2]["content"].strip() != ""
-    # Assembly enthält weiterhin alle drei Kapitel.
+    # The assembly still contains all three chapters.
     assert "## 1. Grundlagen" in result["report"]
     assert "## 3. Fazit" in result["report"]
 
 
 @pytest.mark.asyncio
 async def test_deep_graph_resume_after_writer_crash(monkeypatch):
-    """E2E-Resume (Kern des Geld-sparenden Verhaltens):
+    """E2E resume (the core of the money-saving behavior):
 
-    1. Writer crasht bei Kapitel 2 (leere LLM-Antwort, Retries aus).
-    2. Kapitel 1 wurde VOR der Exception als done-Event MIT Inhalt geliefert
-       (=> Worker/Inline-Pfad hätte es bereits in der DB).
-    3. Resume wie im Worker: aupdate_state(chapters_written) + astream(None).
-    4. Danach: Outline + Recherche NICHT erneut gelaufen (keine doppelten
-       Token-Kosten), Kapitel 1 bleibt unverändert, 2+3 werden geschrieben.
+    1. The writer crashes on chapter 2 (empty LLM response, retries off).
+    2. Chapter 1 was delivered BEFORE the exception as a done event WITH
+       content (=> the worker/inline path would already have it in the DB).
+    3. Resume like in the worker: aupdate_state(chapters_written) + astream(None).
+    4. Afterwards: outline + research have NOT run again (no duplicate
+       token costs), chapter 1 stays unchanged, 2+3 get written.
     """
     from langgraph.checkpoint.memory import InMemorySaver
 
@@ -228,7 +229,7 @@ async def test_deep_graph_resume_after_writer_crash(monkeypatch):
     monkeypatch.setattr(researcher_mod, "search_web", fake_search)
 
     class Chapter2CrashLLM(DeepFakeLLM):
-        """Writer-Aufruf 2 liefert eine LEERE Antwort -> RuntimeError."""
+        """Writer call 2 returns an EMPTY response -> RuntimeError."""
 
         def __init__(self):
             self.outline_calls = 0
@@ -242,7 +243,7 @@ async def test_deep_graph_resume_after_writer_crash(monkeypatch):
                 elif "Fachautor" in messages:
                     self.writer_calls += 1
                     if self.writer_calls == 2:
-                        return AIMessage(content="")  # Kapitel 2: leere Antwort
+                        return AIMessage(content="")  # chapter 2: empty response
             else:
                 self.research_calls += 1
             return await super().ainvoke(messages)
@@ -257,7 +258,7 @@ async def test_deep_graph_resume_after_writer_crash(monkeypatch):
         "citation_style": "ieee",
     }
 
-    # --- 1. Lauf: crasht bei Kapitel 2 ---
+    # --- 1st run: crashes on chapter 2 ---
     events1: list[dict] = []
     with pytest.raises(RuntimeError, match="LLM-Call"):
         async for mode, payload in graph.astream(initial, cfg, stream_mode=["custom"]):
@@ -271,11 +272,11 @@ async def test_deep_graph_resume_after_writer_crash(monkeypatch):
     research_after_first = llm.research_calls
     assert research_after_first > 0
 
-    # --- "DB": gelieferte Kapitel wie Worker/Inline-Pfad persistieren ---
+    # --- "DB": persist the delivered chapters like the worker/inline path ---
     saved_chapters = [{"title": d["title"], "content": d["content"]} for d in done1]
 
-    # --- Resume wie im Worker: neuer Input MIT gespeicherten Kapiteln; die
-    # Nodes sind idempotent (Outline-Skip, Research-Skip, Writer-Skip) ---
+    # --- Resume like in the worker: new input WITH the saved chapters;
+    # the nodes are idempotent (outline skip, research skip, writer skip) ---
     resume_input = {
         "question": "FastAPI-Tiefenanalyse",
         "documents": [],

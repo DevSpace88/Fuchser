@@ -1,19 +1,19 @@
 """
-nodes/supervisor.py — DER PLANER (Stufe 3)
+nodes/supervisor.py — THE PLANNER (Stage 3)
 ===========================================
 
-Der Supervisor zerlegt die Forschungsfrage in 2–4 eigenständig
-recherchierbare Sub-Fragen.
+The supervisor breaks the research question into 2–4 independently
+researchable sub-questions.
 
-Warum HANDGEARBEITETES JSON statt llm.with_structured_output(ResearchPlan)?
-    Der elegante Weg (Schema an die API -> garantiert valides JSON) zickt
-    im Stream-Modus mit dem GLM-Coding-Endpoint: langchain-openai versucht,
-    die Chunks INCREMENTELL als JSON zu parsen, und crasht, bevor das Modell
-    überhaupt JSON liefert (PLAN.md §9, Risikofall 6 — eingetreten!).
-    Lösung: Wir fordern JSON im PROMPT an, extrahieren den ersten
-    {...}-Block und validieren mit Pydantic. Funktioniert mit JEDEM
-    OpenAI-kompatiblen Provider — und zeigt außerdem, was
-    with_structured_output intern für dich tut.
+Why HAND-CRAFTED JSON instead of llm.with_structured_output(ResearchPlan)?
+    The elegant way (schema to the API -> guaranteed valid JSON) misbehaves
+    in stream mode with the GLM coding endpoint: langchain-openai tries to
+    parse the chunks INCREMENTALLY as JSON and crashes before the model
+    even delivers JSON (PLAN.md §9, risk case 6 — it happened!).
+    Solution: we ask for JSON in the PROMPT, extract the first {...}
+    block and validate with Pydantic. Works with EVERY OpenAI-compatible
+    provider — and also shows you what with_structured_output does for
+    you internally.
 """
 
 import logging
@@ -29,12 +29,12 @@ from app.agent.usage import extract_usage
 
 logger = logging.getLogger(__name__)
 
-# Cap aus PLAN.md §9: max. 4 parallele Researcher (Rate-Limits!).
+# Cap from PLAN.md §9: max. 4 parallel researchers (rate limits!).
 MAX_SUB_QUESTIONS = 4
 
 
 class ResearchPlan(BaseModel):
-    """Struktur, die das LLM für die Planung liefern MUSS."""
+    """The structure the LLM MUST deliver for planning."""
 
     sub_questions: list[str] = Field(
         description="2 bis 4 konkrete, eigenständig recherchierbare Teilfragen",
@@ -51,15 +51,15 @@ SUPERVISOR_SYSTEM = (
     '\n\nAntworte AUSSCHLIESSLICH mit JSON im Format: {"sub_questions": ["…", "…"]}'
 )
 
-# Findet den ersten {...}-Block (auch über Zeilen hinweg).
+# Finds the first {...} block (even across lines).
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
 
 def parse_plan(text: str) -> ResearchPlan | None:
     """
-    Extrahiert und validiert den Plan aus der Modell-Antwort.
+    Extracts and validates the plan from the model response.
 
-    Getrennt als Funktion, damit Tests sie direkt füttern können.
+    Kept as a separate function so tests can feed it directly.
     """
     match = _JSON_BLOCK.search(text)
     if match is None:
@@ -73,10 +73,10 @@ def parse_plan(text: str) -> ResearchPlan | None:
 
 async def supervisor_node(state: dict, llm: BaseChatModel | None = None) -> dict:
     """
-    Liefert {'sub_questions': [...]} — der Grundstein fürs Send-Fan-out.
+    Returns {'sub_questions': [...]} — the foundation for the Send fan-out.
 
-    Der Cap (max. 4) wird ZWEIMAL durchgesetzt: im Prompt UND im
-    Pydantic-Modell (max_length) — traut man der KI beim Zählen nie. ;)
+    The cap (max. 4) is enforced TWICE: in the prompt AND in the
+    Pydantic model (max_length) — never trust the AI at counting. ;)
     """
     question = state["question"]
     emit("node", node="supervisor", status="start")
@@ -85,24 +85,24 @@ async def supervisor_node(state: dict, llm: BaseChatModel | None = None) -> dict
 
     model = llm or get_llm()
     if model is None:
-        # Echo-Modus: die Frage selbst als einzige "Sub-Frage".
+        # Echo mode: the question itself as the only "sub-question".
         return {"sub_questions": [question]}
 
     try:
-        # Follow-up-Kontext (Stufe 5): Läuft dieser Graph im selben Thread
-        # wie eine frühere Recherche, liegen deren findings bereits im
-        # State — der Supervisor plant dann nur die NEUEN Aspekte, statt
-        # alles nochmal zu recherchieren. Das ist LangGraph-Thread-Memory.
+        # Follow-up context (Stage 5): if this graph runs in the same thread
+        # as an earlier research run, that run's findings are already in the
+        # state — the supervisor then plans only the NEW aspects instead of
+        # researching everything again. This is LangGraph thread memory.
         context_parts: list[str] = []
 
-        # 0) Hochgeladene Dokumente (document_search-fähig)
-        # 1) Expliziter Chat-Verlauf vom Client (funktioniert auch nach
-        #    fehlgeschlagenen Läufen — der Ursprungs-Kontext geht nie verloren).
+        # 0) Uploaded documents (document_search-capable)
+        # 1) Explicit chat history from the client (also works after failed
+        #    runs — the original context is never lost).
         chat_context = (state.get("context_summary") or "").strip()
         if chat_context:
             context_parts.append(f"Bisheriger Gesprächsverlauf mit dem User:\n{chat_context}")
 
-        # 2) Findings aus dem Thread (falls ein früherer Lauf erfolgreich war).
+        # 2) Findings from the thread (in case an earlier run succeeded).
         documents = state.get("documents") or []
         if documents:
             doc_names = ", ".join(d.get("name", "?") for d in documents)
@@ -136,7 +136,7 @@ async def supervisor_node(state: dict, llm: BaseChatModel | None = None) -> dict
         )
         plan = parse_plan(str(response.content))
         usage = [extract_usage(response)]
-    except Exception:  # noqa: BLE001 — Netzwerk/Provider-Fehler -> Fallback
+    except Exception:  # noqa: BLE001 — network/provider error -> fallback
         logger.warning(
             "Supervisor-Planung fehlgeschlagen — Fallback: Original-Frage",
             exc_info=True,
@@ -144,7 +144,7 @@ async def supervisor_node(state: dict, llm: BaseChatModel | None = None) -> dict
         return {"sub_questions": [question]}
 
     if plan is None:
-        # JSON unlesbar/unplausibel -> Fallback statt Crash.
+        # JSON unreadable/implausible -> fallback instead of a crash.
         logger.warning("Supervisor lieferte kein gültiges JSON — Fallback: Original-Frage")
         return {"sub_questions": [question]}
 

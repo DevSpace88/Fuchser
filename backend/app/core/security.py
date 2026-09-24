@@ -1,59 +1,60 @@
 """
-core/security.py — Hashing + JWT (die KRYPTO-Primitiven)
+core/security.py — Hashing + JWT (the CRYPTO primitives)
 =========================================================
 
-Hier befindet sich die KRYPTO-Logik: Passwort-Hashing und JWT.
+This is where the CRYPTO logic lives: password hashing and JWT.
 
-Zwei Themen, die man verwechseln kann — deshalb eine kleine Einführung:
+Two topics that are easy to confuse — hence a short introduction:
 
 ────────────────────────────────────────────────────────────────────────────
-A) PASSWORT-HASHING (pwdlib / Argon2 / bcrypt)
+A) PASSWORD HASHING (pwdlib / Argon2 / bcrypt)
 ────────────────────────────────────────────────────────────────────────────
-Passwörter dürfen NIEMALS im Klartext gespeichert werden — nicht mal
-verschlüsselt (verschlüsselt = umkehrbar). Stattdessen HASEHN wir sie:
+Passwords must NEVER be stored in plain text — not even encrypted
+(encrypted = reversible). Instead we HASH them:
 
-  hash("secret")  -> "$argon2id$v=19$m=..."  (Einweg, nicht umkehrbar)
+  hash("secret")  -> "$argon2id$v=19$m=..."  (one-way, not reversible)
 
-Beim Login hashen wir das eingegebene Passwort und vergleichen die Hashes.
-Stimmen sie überein, war das Passwort korrekt. So kann auch ein DB-Leak die
-Passwörter nicht preisgeben.
+At login we hash the entered password and compare the hashes.
+If they match, the password was correct. That way even a DB leak cannot
+expose the passwords.
 
-Was macht ein GUTER Hash-Algorithmus?
-  1. "Salt": Jedes Passwort bekommt einen Zufalls-Beimischung. So haben zwei
-     User mit dem gleichen Passwort ("12345678") unterschiedliche Hashes.
-  2. "Slow": Argon2/bcrypt sind ABSICHTLICH langsam (mehrere 100 ms pro Hash).
-     Das macht Brute-Force-Attacken unpraktisch (MD5/SHA sind zu schnell!).
-  3. "Memory-hard": Argon2 braucht viel RAM, erschwert GPU-Attacken.
+What makes a GOOD hashing algorithm?
+  1. "Salt": every password gets a random admixture. That way two users
+     with the same password ("12345678") get different hashes.
+  2. "Slow": Argon2/bcrypt are DELIBERATELY slow (several 100 ms per hash).
+     That makes brute-force attacks impractical (MD5/SHA are too fast!).
+  3. "Memory-hard": Argon2 needs lots of RAM, which hampers GPU attacks.
 
-`pwdlib` (modern) kümmert sich um all das für uns; wir müssen nur
-PasswordHash.recommended() aufrufen.
+`pwdlib` (modern) takes care of all of this for us; we only need to
+call PasswordHash.recommended().
 
 ────────────────────────────────────────────────────────────────────────────
 B) JWT (JSON Web Token)
 ────────────────────────────────────────────────────────────────────────────
-Ein JWT ist ein signiertes "Token" — drei Base64-Teile, mit Punkt getrennt:
+A JWT is a signed "token" — three Base64 parts, separated by dots:
 
    HEADER.PAYLOAD.SIGNATURE
 
-  * HEADER:  Algorithmus ("alg"), z. B. {"alg":"HS256","typ":"JWT"}.
-  * PAYLOAD: Die eigentlichen Daten (claims), z. B.:
+  * HEADER:  algorithm ("alg"), e.g. {"alg":"HS256","typ":"JWT"}.
+  * PAYLOAD: the actual data (claims), e.g.:
                {"sub": "user-uuid", "exp": 1234567890, "type": "access"}
-             WICHTIG: Der Payload ist nur Base64 — NICHT verschlüsselt!
-             Packe NIEMALS Passwörter/Secrets hinein.
+             IMPORTANT: the payload is only Base64 — NOT encrypted!
+             NEVER put passwords/secrets in there.
   * SIGNATURE: HMAC-SHA256( HEADER + PAYLOAD, SECRET_KEY )
-             Der Server kann die Signatur verifizieren — nur wer den
-             SECRET_KEY hat, kann gültige Token erzeugen.
+             The server can verify the signature — only whoever has the
+             SECRET_KEY can produce valid tokens.
 
-Weil die Signatur den Payload abdeckt, kann der Token-Inhalt nicht gefälscht
-werden (ohne Schlüssel). Deshalb ist JWT "stateless" authentifizierbar:
-der Server muss nicht pro Request die Session-DB fragen — Signatur ok reicht.
+Because the signature covers the payload, the token content cannot be
+forged (without the key). That is why a JWT can be verified "statelessly":
+the server does not need to query a session DB per request — a valid
+signature is enough.
 
 HS256 vs. RS256:
-  * HS256 = symmetrisch (derselbe SECRET_KEY signiert + verifiziert). Simple,
-    gut für Monolithen. Das nutzen wir hier.
-  * RS256 = asymmetrisch (privater Schlüssel signiert, öffentlicher verifiziert).
-    Praktisch, wenn ein ANDERER Service Token nur verifizieren soll (ohne
-    sie selbst erzeugen zu dürfen). Für Microservices.
+  * HS256 = symmetric (the same SECRET_KEY signs + verifies). Simple,
+    good for monoliths. That is what we use here.
+  * RS256 = asymmetric (a private key signs, a public one verifies).
+    Practical when ANOTHER service is only supposed to verify tokens
+    (without being allowed to create them itself). For microservices.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -66,45 +67,46 @@ from pwdlib import PasswordHash
 from app.core.config import settings
 
 # ----------------------------------------------------------------------------
-# Password-Hashing (pwdlib)
+# Password hashing (pwdlib)
 # ----------------------------------------------------------------------------
-# PasswordHash.recommended() wählt den besten verfügbaren Algorithmus (Argon2
-# oder bcrypt) automatisch. Ein global erzeugter Hasher reicht für die ganze App.
+# PasswordHash.recommended() automatically picks the best available algorithm
+# (Argon2 or bcrypt). One globally created hasher is enough for the whole app.
 password_hash = PasswordHash.recommended()
 
 
 def hash_password(plain_password: str) -> str:
     """
-    Hasht ein Klartext-Passwort.
+    Hashes a plain-text password.
 
-    Rückgabe ist ein String wie "$argon2id$v=19$m=..." — dieser enthält
-    SALT + Hash + Parameter in einem. Beim Verifizieren braucht pwdlib nur
-    diesen String + das eingegebene Passwort.
+    The return value is a string like "$argon2id$v=19$m=..." — it contains
+    SALT + hash + parameters in one. For verification, pwdlib only needs
+    this string + the entered password.
     """
     return password_hash.hash(plain_password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
-    Vergleicht ein Klartext-Passwort mit dem gespeicherten Hash.
+    Compares a plain-text password with the stored hash.
 
-    WICHTIG: `verify` ist "constant-time" implementiert, d. h. die Laufzeit
-    verät NICHT, an welcher Stelle die Passwörter abweichen. Sonst könnte man
-    per Zeitmessung (Timing-Attack) Informationen über das Passwort lernen.
+    IMPORTANT: `verify` is implemented "constant-time", i.e. the runtime
+    does NOT reveal at which position the passwords differ. Otherwise one
+    could learn information about the password by measuring time (timing
+    attack).
     """
     return password_hash.verify(plain_password, hashed_password)
 
 
 # ----------------------------------------------------------------------------
-# JWT-Erzeugung & -Verifikation
+# JWT creation & verification
 # ----------------------------------------------------------------------------
-# Wir definieren zwei Token-Typen:
-#   "access"  -> kurzer Token für jeden API-Aufruf
-#                (s. settings.access_token_expire_minutes).
-#   "refresh" -> langer Token, nur für den /refresh-Endpunkt
-#                (s. settings.refresh_token_expire_days).
-# Im Payload tragen wir `type` ein, damit ein Access-Token nicht als Refresh
-# (und umgekehrt) benutzt werden kann.
+# We define two token types:
+#   "access"  -> short token for every API call
+#                (see settings.access_token_expire_minutes).
+#   "refresh" -> long token, only for the /refresh endpoint
+#                (see settings.refresh_token_expire_days).
+# We record `type` in the payload so that an access token cannot be used as
+# a refresh token (and vice versa).
 
 TokenType = Literal["access", "refresh"]
 
@@ -117,48 +119,48 @@ def create_token(
     extra_claims: dict[str, Any] | None = None,
 ) -> str:
     """
-    Erzeugt ein signiertes JWT.
+    Creates a signed JWT.
 
-    Parameter:
-      subject:        der "sub"-Claim. Bei uns die User-ID.
-      token_type:     "access" oder "refresh" (wird im Payload eingetragen).
-      expires_delta:  Lebensdauer (timedelta). Abgelaufene Token gelten nicht.
-      extra_claims:   weitere Claims (z. B. {"jti": <uuid>} für Refresh-Tokens).
+    Parameters:
+      subject:        the "sub" claim. For us, the user ID.
+      token_type:     "access" or "refresh" (recorded in the payload).
+      expires_delta:  lifetime (timedelta). Expired tokens are invalid.
+      extra_claims:   additional claims (e.g. {"jti": <uuid>} for refresh tokens).
 
-    Rückgabe: das JWT als String ("xxx.yyy.zzz").
+    Returns: the JWT as a string ("xxx.yyy.zzz").
     """
-    # Zeitpunkt in UTC als UNIX-Timestamp. PyJWT versteht auch datetime-Objekte
-    # direkt, aber Timestamps sind portabler.
+    # Point in time in UTC as a UNIX timestamp. PyJWT also understands datetime
+    # objects directly, but timestamps are more portable.
     now = datetime.now(UTC)
     expire = now + expires_delta
 
-    # Die "Claims" = der Payload-Inhalt.
+    # The "claims" = the payload content.
     to_encode: dict[str, Any] = {
-        # "sub" (subject) = WEM gehört das Token? Konvention aus RFC 7519.
-        # Als STRING serialisieren (UUID ist sonst nicht JSON-kompatibel).
+        # "sub" (subject) = WHOM does the token belong to? Convention from RFC 7519.
+        # Serialize as a STRING (otherwise a UUID is not JSON-compatible).
         "sub": str(subject),
         "type": token_type,
-        # "iat" = issued at (wann erzeugt)
+        # "iat" = issued at (when it was created)
         "iat": now,
-        # "exp" = expiration (wann ungültig). PyJWT prüft das AUTOMATISCH
-        # beim decode — abgelaufene Token werfen ExpiredSignatureError.
+        # "exp" = expiration (when it becomes invalid). PyJWT checks this
+        # AUTOMATICALLY on decode — expired tokens raise ExpiredSignatureError.
         "exp": expire,
     }
     if extra_claims:
         to_encode.update(extra_claims)
 
-    # encode = signieren + Base64-kodieren. algorithms MUSS eine Liste sein
-    # (Sicherheits-Feature: PyJWT verweigert decode ohne explizite Algorithmus-
-    # Liste, um "Algorithm-Confusion"-Attacken zu verhindern).
+    # encode = sign + Base64-encode. algorithms MUST be a list
+    # (security feature: PyJWT refuses to decode without an explicit algorithm
+    # list, to prevent "algorithm confusion" attacks).
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
 def decode_token(token: str) -> dict[str, Any]:
     """
-    Dekodiert + verifiziert ein JWT.
+    Decodes + verifies a JWT.
 
-    Schlägt fehl (signatur falsch / abgelaufen / anderer Algorithmus), wirft
-    PyJWT eine `jwt.InvalidTokenError`-Exception — die ruft der Aufrufer auf
-    und macht daraus einen HTTP 401 (siehe app/core/deps.py).
+    On failure (wrong signature / expired / different algorithm), PyJWT
+    raises a `jwt.InvalidTokenError` exception — the caller catches it
+    and turns it into an HTTP 401 (see app/core/deps.py).
     """
     return jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])

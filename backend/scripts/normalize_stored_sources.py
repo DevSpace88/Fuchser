@@ -1,14 +1,13 @@
 """
-scripts/normalize_stored_sources.py — Einmaliges Backfill für ALTE Recherchen
-===============================================================================
-Die Zitat-Nummern [n] im Report wurden schon immer nach der Reihenfolge
-"neueste Sichtung zuerst, Cap 60" vergeben — nur die PERSISTIERTE
-Quellenliste hatte (bis zum Fix) eine andere Reihenfolge. Dieses Skript
-normiert die gespeicherten Listen nachträglich auf dieselbe Logik
-(tools.normalize_sources), sodass auch alte Reports klickbare,
-STIMMENDE Zitat-Links bekommen.
+scripts/normalize_stored_sources.py — One-off backfill for OLD research
+=======================================================================
+The citation numbers [n] in the report have always been assigned by the
+order "most recent sighting first, cap 60" — only the PERSISTED source
+list had (until the fix) a different order. This script retroactively
+normalizes the stored lists to the same logic (tools.normalize_sources),
+so that old reports also get clickable, MATCHING citation links.
 
-Ausführung:  cd backend && POSTGRES_HOST=localhost uv run --env-file ../.env \
+Invocation:  cd backend && POSTGRES_HOST=localhost uv run --env-file ../.env \
              python scripts/normalize_stored_sources.py
 """
 

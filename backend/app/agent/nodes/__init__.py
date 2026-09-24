@@ -1,11 +1,11 @@
 """
-agent/nodes/ — die drei Nodes des Multi-Agent-Graphen (Stufe 3, PLAN.md)
+agent/nodes/ — the three nodes of the multi-agent graph (Stage 3, PLAN.md)
 
-    supervisor.py   → plant 2–4 recherchierbare Sub-Fragen (structured output)
-    researcher.py   → ReAct-Loop pro Sub-Frage (Suche → Grading → Antwort)
-    synthesizer.py  → schreibt den finalen Report mit Quellen-Zitaten
+    supervisor.py   → plans 2–4 researchable sub-questions (structured output)
+    researcher.py   → ReAct loop per sub-question (search → grading → answer)
+    synthesizer.py  → writes the final report with source citations
 
-graph.py verdrahtet sie: START → supervisor → (Send-Fan-out) researcher*
+graph.py wires them: START → supervisor → (Send fan-out) researcher*
 → synthesizer → END.
 """
 

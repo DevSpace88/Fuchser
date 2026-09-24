@@ -4,14 +4,14 @@
 
 /*
   ============================================================================
-  THEME — "Neon Bloom" (User-Wunsch, übersetzt aus Tailwind-v4-shadcn-Theme)
+  THEME — "Neon Bloom" (user request, translated from a Tailwind v4 shadcn theme)
   ============================================================================
-  Original lag im v4-Format vor (@theme inline, rgb()-Werte). Dieses Projekt
-  läuft auf Tailwind v3 — deshalb: Farben als RGB-KANÄLE ("219 39 119") in
-  CSS-Variablen, tailwind.config.js mappt sie mit rgb(var(--x) / <alpha-value>)
-  (das <alpha-value>-Stück erlaubt opacity-Utilities wie bg-primary/50).
+  The original was in v4 format (@theme inline, rgb() values). This project
+  runs on Tailwind v3 — hence: colors as RGB CHANNELS ("219 39 119") in CSS
+  variables; tailwind.config.js maps them with rgb(var(--x) / <alpha-value>)
+  (the <alpha-value> piece enables opacity utilities like bg-primary/50).
 
-  Dark Mode: Klasse .dark auf <html> (darkMode: ["class"] in der config).
+  Dark mode: .dark class on <html> (darkMode: ["class"] in the config).
   ============================================================================
 */
 @layer base {
@@ -54,7 +54,7 @@
     --radius: 0.75rem;
     --tracking-normal: 0.025em;
 
-    /* Schatten-Set aus dem v4-Theme (Pink-Glow, mit Opazitäts-Stufen) */
+    /* Shadow set from the v4 theme (pink glow, with opacity levels) */
     --shadow-2xs: 0px 4px 10px 0px rgb(219 39 119 / 0.05);
     --shadow-sm: 0px 4px 10px 0px rgb(219 39 119 / 0.1), 0px 1px 2px -1px rgb(219 39 119 / 0.1);
     --shadow-md: 0px 4px 10px 0px rgb(219 39 119 / 0.1), 0px 2px 4px -1px rgb(219 39 119 / 0.1);
@@ -99,7 +99,7 @@
     --font-mono: "JetBrains Mono", monospace;
     --radius: 0.5rem;
 
-    /* Neon-Glow-Schatten (Magenta) aus dem v4-Theme */
+    /* Neon glow shadows (magenta) from the v4 theme */
     --shadow-2xs: 0px 0px 15px 1px rgb(255 0 255 / 0.25);
     --shadow-sm: 0px 0px 15px 1px rgb(255 0 255 / 0.5), 0px 1px 2px 0px rgb(255 0 255 / 0.5);
     --shadow-md: 0px 0px 15px 1px rgb(255 0 255 / 0.5), 0px 2px 4px 0px rgb(255 0 255 / 0.5);
@@ -120,12 +120,12 @@
 }
 
 /* ==========================================================================
-   Report-Typografie (Stufe 4, User-Feedback):
-   Markdown-Reports brauchen echte Absätze & Hierarchie statt eines
-   zusammengequetschten Textblocks — react-markdown rendert rohe <h1>/<p>,
-   ohne Typography-Plugin stylen wir sie hier von Hand.
-   overflow-wrap: anywhere verhindert, dass lange URLs/Token aus dem
-   Block "ausbrechen".
+   Report typography (level 4, user feedback):
+   Markdown reports need real paragraphs & hierarchy instead of one
+   cramped block of text — react-markdown renders raw <h1>/<p>;
+   without the Typography plugin we style them by hand here.
+   overflow-wrap: anywhere prevents long URLs/tokens from
+   "breaking out" of the block.
    ========================================================================== */
 .report-md {
   overflow-wrap: anywhere;
@@ -166,7 +166,7 @@
   @apply border border-border px-2 py-1 text-left;
 }
 
-/* Landingpage: sanftes Einblenden der Quellen-Chips im Demo-Ticker */
+/* Landing page: gentle fade-in of the source chips in the demo ticker */
 @keyframes fade-in {
   from {
     opacity: 0;

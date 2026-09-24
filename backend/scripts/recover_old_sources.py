@@ -1,20 +1,20 @@
 """
-scripts/recover_old_sources.py — Best-Effort-Wiederherstellung alter Zitat-Links
-================================================================================
-PROBLEM: Reports aus der Buggy-Ära (Dreifach-Synthese + 60er-Cap) zitieren
-Nummern bis [169], aber in research_projects.sources liegen nur 60 Einträge
-(falsch sortiert) -> die meisten Zitate sind nicht verlinkbar.
+scripts/recover_old_sources.py — Best-effort recovery of old citation links
+===========================================================================
+PROBLEM: reports from the buggy era (triple synthesis + cap of 60) cite
+numbers up to [169], but research_projects.sources only holds 60 entries
+(wrongly sorted) -> most citations cannot be linked.
 
-IDEE: Die LangGraph-Checkpoints enthalten den VOLLSTÄNDIGEN sources-Kanal des
-Threads (unkappt, mit Duplikaten, in Ankunfts-Reihenfolge). Daraus lassen
-sich die historischen Nummerierungsschemata rekonstruieren:
-    * Era A ("first-seen", kein Cap): Duplikate entfernen, ERSTE Sichtung
-      behält — präfix-stabil über Synthese-Runden hinweg.
-    * Era B ("last-occurrence", Cap 60): die aktuelle normalize_sources.
-Wir probieren beide (+ die gespeicherte Liste), nehmen die mit den MEISTEN
-auflösbaren Zitaten und speichern sie.
+IDEA: the LangGraph checkpoints contain the COMPLETE sources channel of the
+thread (uncapped, with duplicates, in arrival order). The historical
+numbering schemes can be reconstructed from it:
+    * Era A ("first-seen", no cap): remove duplicates, the FIRST sighting
+      wins — prefix-stable across synthesis rounds.
+    * Era B ("last-occurrence", cap 60): the current normalize_sources.
+We try both (+ the stored list), pick the one resolving the MOST citations
+and save it.
 
-Unauflösbare Nummern (halluziniert oder Liste weg) bleiben ehrlich unlinked.
+Unresolvable numbers (hallucinated or list gone) honestly stay unlinked.
 """
 
 import asyncio
@@ -34,7 +34,7 @@ from app.models.research_project import ResearchProject
 
 
 def dedupe_first_seen(sources: list) -> list:
-    """Era-A-Nummerierung: erste Sichtung gewinnt, Reihenfolge = Ankunft."""
+    """Era-A numbering: first sighting wins, order = arrival."""
     seen: dict[str, dict] = {}
     for s in sources:
         url = s.get("url", "")
@@ -44,7 +44,7 @@ def dedupe_first_seen(sources: list) -> list:
 
 
 def resolvable(report: str, sources: list) -> int:
-    """Wie viele [n]-Zitate zeigen auf eine existierende Quelle?"""
+    """How many [n] citations point to an existing source?"""
     nums = [int(n) for n in re.findall(r"\[(\d{1,3})\]", report or "")]
     return sum(1 for n in nums if 1 <= n <= len(sources))
 
@@ -64,7 +64,7 @@ async def main(apply: bool) -> None:
             if not nums:
                 continue
 
-            # Vollständige Thread-Quellen aus dem Checkpoint holen.
+            # Fetch the full thread sources from the checkpoint.
             try:
                 snapshot = await graph.aget_state(
                     {"configurable": {"thread_id": str(p.thread_id)}}

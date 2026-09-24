@@ -1,22 +1,22 @@
 """
-agent/persistence.py — LangGraph-Checkpointer auf unserem Postgres
+agent/persistence.py — the LangGraph checkpointer on our Postgres
 ===================================================================
 
-DER Grund, warum LangGraph hier spannend ist: Ein *Checkpointer* speichert
-den State eines Graph-Laufs pro *Thread* (thread_id) in der Datenbank.
+THE reason LangGraph is exciting here: a *checkpointer* stores a graph
+run's state per *thread* (thread_id) in the database.
 
-    * Browser-Refresh? State ist weg? NEIN — steht in Postgres.
-    * Backend-Restart mitten in der Recherche? Weitermachbar.
-    * Follow-up-Frage? Der neue Lauf sieht den alten State (Memory).
+    * Browser refresh? State gone? NO — it lives in Postgres.
+    * Backend restart mid-research? Resumable.
+    * Follow-up question? The new run sees the old state (memory).
 
-Der AsyncPostgresSaver legt seine eigenen Tabellen an
-(checkpoints, checkpoint_writes, checkpoint_blobs) — die gehören NICHT in
-Alembic, `await saver.setup()` erledigt das idempotent beim Start.
+AsyncPostgresSaver creates its own tables
+(checkpoints, checkpoint_writes, checkpoint_blobs) — they do NOT belong
+in Alembic; `await saver.setup()` handles that idempotently at startup.
 
-Pool-Budget (FastAPI-Skill-Regel): Der Saver hält EIGENE Verbindungen.
-workers × (App-Pool + Saver-Verbindungen) muss unter Postgres
-max_connections bleiben — deshalb konfigurieren wir ihn bewusst klein
-und schließen ihn sauber beim Shutdown.
+Pool budget (FastAPI skill rule): the saver holds its OWN connections.
+workers × (app pool + saver connections) must stay below Postgres
+max_connections — that's why we deliberately configure it small and
+close it cleanly on shutdown.
 """
 
 import logging
@@ -30,37 +30,37 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Modul-global: genau EIN Saver pro Prozess (Lifespan-Regel: pool everything).
+# Module-global: exactly ONE saver per process (lifespan rule: pool everything).
 _exit_stack: AsyncExitStack | None = None
 _saver: BaseCheckpointSaver | None = None
 
 
 async def init_checkpointer() -> BaseCheckpointSaver:
     """
-    Startet den Postgres-Checkpointer im Lifespan.
+    Starts the Postgres checkpointer in the lifespan.
 
-    Fällt Postgres aus (z. B. lokale Tests ohne DB), degradieren wir auf
-    InMemorySaver: die App läuft, Persistenz ist dann nur prozess-lokal.
+    If Postgres is down (e.g. local tests without a DB), we degrade to
+    InMemorySaver: the app runs, persistence is then process-local only.
     """
     global _exit_stack, _saver
     try:
         _exit_stack = AsyncExitStack()
         cm = AsyncPostgresSaver.from_conn_string(settings.agent_database_url)
         saver = await _exit_stack.enter_async_context(cm)
-        await saver.setup()  # legt die Checkpoint-Tabellen an (idempotent)
+        await saver.setup()  # creates the checkpoint tables (idempotent)
         _saver = saver
         logger.info(
             "LangGraph-Checkpointer: Postgres (%s)",
             settings.agent_database_url.split("@")[-1],
         )
-    except Exception as e:  # noqa: BLE001 — bewusst breit: App soll weiterlaufen
+    except Exception as e:  # noqa: BLE001 — deliberately broad: app must keep running
         logger.warning("Postgres-Checkpointer nicht verfügbar (%s) — nutze InMemorySaver", e)
         _saver = InMemorySaver()
     return _saver
 
 
 async def shutdown_checkpointer() -> None:
-    """Schließt den Saver + seine Verbindungen beim App-Stopp."""
+    """Closes the saver + its connections when the app stops."""
     global _exit_stack, _saver
     if _exit_stack is not None:
         await _exit_stack.aclose()
@@ -70,9 +70,9 @@ async def shutdown_checkpointer() -> None:
 
 def get_checkpointer() -> BaseCheckpointSaver:
     """
-    Liefert den aktiven Saver (immer einer — Fallback InMemorySaver).
+    Returns the active saver (there is always one — fallback InMemorySaver).
 
-    Aufrufer sind typischerweise Services, die einen Graph kompilieren.
+    Callers are typically services that compile a graph.
     """
     if _saver is None:
         return InMemorySaver()

@@ -1,19 +1,19 @@
 """
-tests/test_agent_graph.py — Multi-Agent-Graph (Stufe 3, PLAN.md)
-=================================================================
+tests/test_agent_graph.py — Multi-agent graph (Stage 3, PLAN.md)
+===============================================================
 
-Getestet OHNE Netzwerk und OHNE API-Key:
-    * FakeMultiLLM spielt den Provider für ALLE Nodes: Supervisor
-      (structured output → ResearchPlan), Researcher (ReAct-Loop mit
-      tool_calls) und Synthesizer (echo't den Prompt — so sehen wir,
-      dass die Findings wirklich angekommen sind).
-    * search_web wird durch einen Stub ersetzt (deterministische Quellen).
+Tested WITHOUT network and WITHOUT an API key:
+    * FakeMultiLLM plays the provider for ALL nodes: supervisor
+      (structured output → ResearchPlan), researcher (ReAct loop with
+      tool_calls) and synthesizer (echoes the prompt — so we can see
+      that the findings really arrived).
+    * search_web is replaced by a stub (deterministic sources).
 
-Kernfragen der Tests:
-    * Plant der Supervisor (mit Cap)?
-    * Fan-out: Läuft EIN Researcher pro Sub-Frage (Send)?
-    * Join: Mergt der Reducer findings/sources aller Instanzen?
-    * Schreibt der Synthesizer einen Report aus ALLEN Findings?
+Core questions of the tests:
+    * Does the supervisor plan (with a cap)?
+    * Fan-out: does ONE researcher run per sub-question (Send)?
+    * Join: does the reducer merge findings/sources of all instances?
+    * Does the synthesizer write a report from ALL findings?
 """
 
 import pytest
@@ -27,22 +27,22 @@ from app.agent.tools import Source
 
 
 # ----------------------------------------------------------------------------
-# Fixtures: Fake-LLM + gemockte Suche
+# Fixtures: fake LLM + mocked search
 # ----------------------------------------------------------------------------
 class FakeMultiLLM:
     """
-    Ein Fake für ALLE Rollen — entscheidet anhand der Nachrichtenlage:
+    A fake for ALL roles — decides based on the message history:
 
-      * with_structured_output (Supervisor) -> JSON-Plan im Prompt-Format
-      * ReAct-Runde ohne ToolMessage        -> Tool-Call wünschen
-      * Prompt enthält "Recherche-Ergebnisse" (Synthesizer) -> echo't den Prompt
-      * sonst                               -> "Antwort zu: <Frage>"
+      * with_structured_output (supervisor) -> JSON plan in prompt format
+      * ReAct round without ToolMessage     -> request a tool call
+      * prompt contains "Recherche-Ergebnisse" (synthesizer) -> echoes the prompt
+      * otherwise                           -> "Antwort zu: <question>"
     """
 
     def __init__(self, critiques: list[str] | None = None):
         self.seen_prompts: list[str] = []
-        # Kritiker-Antworten als Queue (letzter Eintrag gilt für alle
-        # weiteren Aufrufe) — Default: immer zufrieden.
+        # Critique responses as a queue (the last entry applies to all
+        # further calls) — default: always satisfied.
         self.critiques = list(critiques or ['{"verdict": "ok"}'])
 
     def bind_tools(self, tools):
@@ -53,22 +53,22 @@ class FakeMultiLLM:
         system_text = " ".join(str(m.content) for m in messages if m.type == "system")
         last_user = next((m.content for m in reversed(messages) if isinstance(m, HumanMessage)), "")
         if "Qualitäts-Prüfer" in system_text:
-            # Kritiker: JSON-Urteil aus der Queue (siehe critic.py).
+            # Critic: JSON verdict from the queue (see critic.py).
             if len(self.critiques) > 1:
                 return AIMessage(content=self.critiques.pop(0))
             return AIMessage(content=self.critiques[0])
         if "Recherche-Planer" in system_text:
-            # Supervisor: JSON im Prompt-Format (siehe supervisor.py).
+            # Supervisor: JSON in prompt format (see supervisor.py).
             return AIMessage(
                 content='{"sub_questions": '
                 '["Was ist X?", "Wie nutzt man X?", "Welche Alternativen gibt es?"]}'
             )
         if "Recherche-Ergebnisse" in last_user:
-            # Synthesizer (sein Prompt enthält die gemergten Findings).
+            # Synthesizer (its prompt contains the merged findings).
             return AIMessage(content=f"REPORT::{last_user}")
         if not any(getattr(m, "tool_call_id", None) for m in messages):
-            # Erste ReAct-Runde: Tool wünschen (danach steht ein ToolMessage
-            # in der Historie -> nächste Runde liefert die Antwort).
+            # First ReAct round: request a tool call (afterwards a ToolMessage
+            # is in the history -> the next round delivers the answer).
             return AIMessage(
                 content="",
                 tool_calls=[
@@ -95,7 +95,7 @@ async def _fake_search(query: str, max_results: int = 5) -> list[Source]:
 
 @pytest.fixture
 def mocked_search(monkeypatch):
-    # search_web wird im researcher-Modul ausgeführt — dort patchen.
+    # search_web runs in the researcher module — patch it there.
     import app.agent.nodes.researcher as researcher_mod
 
     monkeypatch.setattr(researcher_mod, "search_web", _fake_search)
@@ -116,16 +116,16 @@ async def test_supervisor_plans_sub_questions():
 async def test_supervisor_fallback_on_invalid_json():
     class GarbageLLM:
         async def ainvoke(self, messages):
-            return AIMessage(content="Ich kann kein JSON, sorry!")  # kein {...}
+            return AIMessage(content="Ich kann kein JSON, sorry!")  # no {...}
 
     result = await supervisor_node({"question": "Frage?"}, llm=GarbageLLM())
-    # Fallback: Original-Frage als einzige Sub-Frage.
+    # Fallback: the original question as the only sub-question.
     assert result["sub_questions"] == ["Frage?"]
 
 
 @pytest.mark.asyncio
 async def test_supervisor_parse_plan_extracts_json_block():
-    """parse_plan: JSON aus umgebendem Text extrahieren + validieren."""
+    """parse_plan: extract JSON from surrounding text + validate it."""
     from app.agent.nodes.supervisor import parse_plan
 
     text = 'Gerne! Hier der Plan:\n```json\n{"sub_questions": ["A?", "B?"]}\n```'
@@ -136,7 +136,7 @@ async def test_supervisor_parse_plan_extracts_json_block():
 
 
 # ============================================================================
-# RESEARCHER (ReAct-Loop, pro Sub-Frage)
+# RESEARCHER (ReAct loop, one per sub-question)
 # ============================================================================
 @pytest.mark.asyncio
 async def test_react_loop_searches_then_answers(mocked_search):
@@ -144,12 +144,12 @@ async def test_react_loop_searches_then_answers(mocked_search):
     answer, sources, usage = await run_react_loop(llm, "Was sind Checkpointer?")
     assert "Antwort zu:" in answer
     assert sources == FAKE_SOURCES
-    assert len(usage) == 2  # Tool-Runde + finale Antwort = 2 LLM-Calls
+    assert len(usage) == 2  # tool round + final answer = 2 LLM calls
 
 
 @pytest.mark.asyncio
 async def test_researcher_node_returns_reducer_channels(mocked_search):
-    """Der Node schreibt NUR in findings/sources — Basis fürs parallele Fan-out."""
+    """The node writes ONLY to findings/sources — the basis for parallel fan-out."""
     llm = FakeMultiLLM()
     result = await researcher_node(
         {"question": "Alles über X", "sub_question": "Was ist X?"}, llm=llm
@@ -179,53 +179,53 @@ async def test_synthesizer_dedupes_and_reports():
         {"sub_question": "Was ist X?", "answer": "X ist …"},
         {"sub_question": "Wie X?", "answer": "So …"},
     ]
-    doubled_sources = FAKE_SOURCES + FAKE_SOURCES  # Duplikate!
+    doubled_sources = FAKE_SOURCES + FAKE_SOURCES  # duplicates!
     result = await synthesizer_node(
         {"question": "X?", "findings": findings, "sources": doubled_sources}, llm=llm
     )
     assert result["report"].startswith("REPORT::")
-    assert "X ist …" in result["report"]  # Findings waren im Prompt
-    # Der Synthesizer schreibt KEINE sources zurück (Reducer-Kanal! sonst
-    # Duplikate) — nur der Report.
+    assert "X ist …" in result["report"]  # findings were in the prompt
+    # The synthesizer does NOT write sources back (reducer channel!
+    # otherwise duplicates) — only the report.
     assert "sources" not in result
 
 
 # ============================================================================
-# DER GANZE GRAPH: Fan-out + Join
+# THE WHOLE GRAPH: fan-out + join
 # ============================================================================
 @pytest.mark.asyncio
 async def test_multi_agent_fan_out_and_join(mocked_search):
-    """Der Kern-Test: 3 geplante Sub-Fragen -> 3 Researcher -> 1 Report."""
+    """The core test: 3 planned sub-questions -> 3 researchers -> 1 report."""
     llm = FakeMultiLLM()
     g = build_research_graph(llm=llm)
     result = await g.ainvoke({"question": "Alles über LangGraph"})
 
-    # Join: findings aller 3 Instanzen gemergt (Reducer!).
+    # Join: findings of all 3 instances merged (reducer!).
     sub_questions_found = {f["sub_question"] for f in result["findings"]}
     assert sub_questions_found == {"Was ist X?", "Wie nutzt man X?", "Welche Alternativen gibt es?"}
 
-    # Quellen: 3 Researcher × 2 Quellen (Stub).
+    # Sources: 3 researchers × 2 sources (stub).
     assert len(result["sources"]) == 6
 
-    # Report aus dem Synthesizer, mit eingeflossenen Findings.
+    # Report from the synthesizer, with the findings folded in.
     assert result["report"].startswith("REPORT::")
     assert "Antwort zu:" in result["report"]
 
 
 @pytest.mark.asyncio
 async def test_fan_out_respects_cap():
-    """Mehr geplante Sub-Fragen als erlaubt? fan_out schneidet auf den Cap ab."""
+    """More planned sub-questions than allowed? fan_out truncates to the cap."""
     state = {"question": "Q", "sub_questions": [f"Frage {i}" for i in range(10)]}
     sends = fan_out_researchers(state)
     assert len(sends) == MAX_SUB_QUESTIONS
-    # Jeder Send trägt SEINE Sub-Frage im eigenen Input-State.
+    # Each Send carries ITS OWN sub-question in its individual input state.
     assert sends[0].arg["sub_question"] == "Frage 0"
     assert sends[1].arg["sub_question"] == "Frage 1"
 
 
 @pytest.mark.asyncio
 async def test_graph_echo_mode_full_run(monkeypatch):
-    """Ohne API-Key: Supervisor->1 Sub-Frage, Echo-Findings, Echo-Report."""
+    """Without an API key: supervisor->1 sub-question, echo findings, echo report."""
     import app.agent.llm as llm_mod
 
     monkeypatch.setattr(llm_mod, "get_llm", lambda **_: None)
@@ -238,18 +238,18 @@ async def test_graph_echo_mode_full_run(monkeypatch):
 
 
 # ============================================================================
-# CRITIC (Stufe 4) — Qualitäts-Gate mit Lücken-Loop
+# CRITIC (Stage 4) — quality gate with gap loop
 # ============================================================================
 @pytest.mark.asyncio
 async def test_critic_ok_verdict():
     from app.agent.nodes.critic import critic_node
 
-    llm = FakeMultiLLM()  # Default-Urteil: ok
+    llm = FakeMultiLLM()  # default verdict: ok
     result = await critic_node(
         {"question": "Q", "report": "Guter Report.", "revision_count": 0}, llm=llm
     )
     assert result["critique"]["verdict"] == "ok"
-    assert result["revision_count"] == 0  # keine Runde ausgelöst
+    assert result["revision_count"] == 0  # no round triggered
 
 
 @pytest.mark.asyncio
@@ -271,7 +271,7 @@ async def test_critic_caps_gap_count():
 
     llm = FakeMultiLLM(critiques=['{"verdict": "gaps", "gaps": ["A?", "B?", "C?", "D?"]}'])
     result = await critic_node({"question": "Q", "report": "R", "revision_count": 0}, llm=llm)
-    assert len(result["critique"]["gaps"]) == MAX_GAPS  # 2, nicht 4
+    assert len(result["critique"]["gaps"]) == MAX_GAPS  # 2, not 4
 
 
 def test_route_after_critic_end_on_ok():
@@ -289,7 +289,7 @@ def test_route_after_critic_sends_on_gaps():
     state = {
         "question": "Q",
         "critique": {"verdict": "gaps", "gaps": ["Lücke 1?", "Lücke 2?"]},
-        "revision_count": 1,  # unter dem Cap -> noch eine Runde
+        "revision_count": 1,  # below the cap -> one more round
     }
     sends = route_after_critic(state)
     assert all(s.node == "researcher" for s in sends)
@@ -304,7 +304,7 @@ def test_route_after_critic_ends_at_cap():
     state = {
         "question": "Q",
         "critique": {"verdict": "gaps", "gaps": ["Nochmal?"]},
-        "revision_count": 3,  # über MAX_REVISIONS -> hart beenden
+        "revision_count": 3,  # above MAX_REVISIONS -> terminate forcefully
     }
     assert route_after_critic(state) == _END
 
@@ -312,19 +312,19 @@ def test_route_after_critic_ends_at_cap():
 @pytest.mark.asyncio
 async def test_full_loop_with_one_revision(mocked_search):
     """
-    DER Stufe-4-Kern-Test: Kritiker meldet Lücken -> Researcher laufen für
-    die Lücken -> Synthesizer schreibt neu -> Kritiker ist zufrieden -> END.
+    THE stage-4 core test: critic reports gaps -> researchers run for
+    the gaps -> synthesizer rewrites -> critic is satisfied -> END.
     """
     llm = FakeMultiLLM(
         critiques=[
-            '{"verdict": "gaps", "gaps": ["Was ist mit Preisen?"]}',  # 1. Urteil
-            '{"verdict": "ok"}',  # 2. Urteil (nach der Überarbeitung)
+            '{"verdict": "gaps", "gaps": ["Was ist mit Preisen?"]}',  # 1st verdict
+            '{"verdict": "ok"}',  # 2nd verdict (after the revision)
         ]
     )
     g = build_research_graph(llm=llm)
     result = await g.ainvoke({"question": "Alles über X"})
 
-    # Anfangs 3 Researcher + 1 Lücken-Researcher = 4 Findings.
+    # Initially 3 researchers + 1 gap researcher = 4 findings.
     assert len(result["findings"]) == 4
     assert result["findings"][3]["sub_question"] == "Was ist mit Preisen?"
     assert result["revision_count"] == 1
@@ -334,24 +334,25 @@ async def test_full_loop_with_one_revision(mocked_search):
 
 @pytest.mark.asyncio
 async def test_loop_stops_at_revision_cap(mocked_search):
-    """Kritiker ist NIE zufrieden: nach MAX_REVISIONS Runden wird hart beendet."""
+    """The critic is NEVER satisfied: after MAX_REVISIONS rounds it terminates
+    forcefully."""
     from app.agent.nodes.critic import MAX_REVISIONS
 
     llm = FakeMultiLLM(critiques=['{"verdict": "gaps", "gaps": ["Noch was?"]}'])
     g = build_research_graph(llm=llm)
     result = await g.ainvoke({"question": "Endlos?"})
 
-    # 3 Anfangs-Researcher + MAX_REVISIONS Lücken-Researcher.
+    # 3 initial researchers + MAX_REVISIONS gap researchers.
     assert len(result["findings"]) == 3 + MAX_REVISIONS
-    # Der Zähler endet bei MAX+1: die letzte Inkrementierung IST das Signal,
-    # das die Route zum END schickt (revisions <= MAX = noch eine Runde).
+    # The counter ends at MAX+1: the final increment IS the signal
+    # that routes to END (revisions <= MAX = one more round).
     assert result["revision_count"] == MAX_REVISIONS + 1
 
 
 @pytest.mark.asyncio
 async def test_synthesizer_strips_appended_sources_section():
-    """User-Feedback: Modell hängt trotz Prompt gern eine Quellenliste an —
-    der Synthesizer schneidet sie ab (die UI rendert Quellen selbst, mit Links)."""
+    """User feedback: despite the prompt, the model likes to append a source
+    list — the synthesizer cuts it off (the UI renders sources itself, with links)."""
     from langchain_core.messages import AIMessage
 
     from app.agent.nodes.synthesizer import strip_sources_section
@@ -370,14 +371,14 @@ async def test_synthesizer_strips_appended_sources_section():
     assert "## Quellen" not in result["report"]
     assert "Wichtiger Text [1] und [2]." in result["report"]
 
-    # Direkter Einheitstest der Strip-Funktion (auch Literaturverzeichnis):
+    # Direct unit test of the strip function (also for the bibliography heading):
     assert "Quellen" not in strip_sources_section("Text\n\n### Literaturverzeichnis\n\n1. x")
     assert strip_sources_section("Text ohne Anhang").startswith("Text")
 
 
 def test_strip_plain_text_sources_block():
-    """User-Feedback-Variante: Quellen-Block OHNE Markdown-Überschrift —
-    nur die Pure-Text-Zeile 'Quellen'. Muss auch weg (UI rendert selbst)."""
+    """User-feedback variant: sources block WITHOUT a Markdown heading —
+    just the plain-text line 'Quellen'. Must also go (the UI renders it itself)."""
     from app.agent.nodes.synthesizer import strip_sources_section
 
     report = (
@@ -391,12 +392,12 @@ def test_strip_plain_text_sources_block():
     result = strip_sources_section(report)
     assert "Quellen" not in result
     assert "https://" not in result
-    assert "Hinweis zu Lücken" in result  # Inhalt bleibt, nur der Dump fliegt
+    assert "Hinweis zu Lücken" in result  # content stays, only the dump is removed
 
 
 def test_strip_does_not_cut_legit_sentence_with_quellen():
-    """Ein Satz wie 'Die Quellen sind vielfältig' darf NICHT abgeschnitten
-    werden — der Plain-Text-Strip verlangt 2+ URLs dahinter."""
+    """A sentence like 'Die Quellen sind vielfältig' must NOT be cut off —
+    the plain-text strip requires 2+ URLs after it."""
     from app.agent.nodes.synthesizer import strip_sources_section
 
     report = "## Bericht\n\nDie Quellen sind vielfältig [1]. Mehr Text folgt."
@@ -405,8 +406,8 @@ def test_strip_does_not_cut_legit_sentence_with_quellen():
 
 @pytest.mark.asyncio
 async def test_supervisor_uses_chat_context():
-    """Stufe 5+: Der Chat-Verlauf (context_summary) landet im Supervisor-
-    Prompt — auch wenn der Thread KEINE findings hat (z. B. nach Fehlern)."""
+    """Stage 5+: the chat history (context_summary) lands in the supervisor
+    prompt — even when the thread has NO findings (e.g. after errors)."""
     llm = FakeMultiLLM()
     state = {
         "question": "recherchiere das nochmal bitte",
@@ -414,10 +415,10 @@ async def test_supervisor_uses_chat_context():
             "User: Wie hoch ist das Gehalt bei Laravel- vs FastAPI-Entwicklern?\n"
             "Fuchser: (fehlgeschlagen: Rate-Limit)"
         ),
-        # KEINE findings — genau der Fehlerfall aus dem echten Chat.
+        # NO findings — exactly the failure case from the real chat.
     }
     result = await supervisor_node(state, llm=llm)
-    assert result["sub_questions"]  # plant trotzdem
-    # Der Prompt (in seen_prompts[0]) enthält den Verlauf.
+    assert result["sub_questions"]  # plans anyway
+    # The prompt (in seen_prompts[0]) contains the history.
     assert "Laravel" in llm.seen_prompts[0]
     assert "Rate-Limit" in llm.seen_prompts[0]

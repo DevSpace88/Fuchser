@@ -1,22 +1,22 @@
 """
-agent/language.py — Sprach-Lektor für Deep-Report-Kapitel
+agent/language.py — language lector for deep-report chapters
 ==========================================================
 
-Warum existiert dieses Modul?
-    DeepSeek/GLM zeigen gelegentlich zwei Schwächen:
-      1. Code-Switching: mitten im deutschen Text erscheinen chinesische
-         (seltener kyrillische/japanische) Zeichen.
-      2. "Schein-Anglizismen": erfundene eingedeutschte Englisch-Wörter,
-         die so nicht existieren.
+Why does this module exist?
+    DeepSeek/GLM occasionally show two weaknesses:
+      1. Code-switching: Chinese (more rarely Cyrillic/Japanese)
+         characters appear in the middle of German text.
+      2. "Pseudo-Anglicisms": invented Germanized English words that
+         do not exist in that form.
 
-Kosten-Strategie (der User zahlt pro Token!):
-    1. FREMDE SCHRIFT => Regex-Check, 0 Token. Bei Fund: Korrektur erzwingen.
-    2. Sonst Mini-Check => LLM antwortet nur YES/NO (~1 Output-Token).
-    3. Nur bei YES (oder Fund aus 1.) => Korrektur-Call, der das Kapitel
-       überarbeitet zurückgibt.
+Cost strategy (the user pays per token!):
+    1. FOREIGN SCRIPT => regex check, 0 tokens. On a hit: force a correction.
+    2. Otherwise mini-check => LLM answers only YES/NO (~1 output token).
+    3. Only on YES (or a hit from 1.) => correction call that returns
+       the reworked chapter.
 
-Die Korrektur ist inhalts-treu: [n]-Zitate, Überschriften und Fakten
-bleiben exakt erhalten — nur die Sprachebene wird angefasst.
+The correction is content-faithful: [n] citations, headings and facts
+are kept exactly as they are — only the language level is touched.
 """
 
 import logging
@@ -28,23 +28,23 @@ from app.agent.usage import extract_usage
 
 logger = logging.getLogger(__name__)
 
-# Fremde Schriftsysteme, die in einem deutschen Bericht nichts verloren
-# haben: CJK (Chinesisch), Kana (Japanisch), Hangul (Koreanisch),
-# Kyrillisch. Bewusst OHNE Griechisch/Latein (Mathematik, Maßeinheiten).
+# Foreign writing systems that have no business in a German report:
+# CJK (Chinese), Kana (Japanese), Hangul (Korean), Cyrillic.
+# Deliberately WITHOUT Greek/Latin (mathematics, units of measure).
 FOREIGN_SCRIPT_RE = re.compile(
     "["
-    "\u4e00-\u9fff"  # CJK Unified Ideographs (Chinesisch)
+    "\u4e00-\u9fff"  # CJK Unified Ideographs (Chinese)
     "\u3400-\u4dbf"  # CJK Extension A
     "\uf900-\ufaff"  # CJK Compatibility Ideographs
-    "\u3040-\u30ff"  # Hiragana + Katakana (Japanisch)
-    "\uac00-\ud7af"  # Hangul Syllables (Koreanisch)
-    "\u0400-\u04ff"  # Kyrillisch
+    "\u3040-\u30ff"  # Hiragana + Katakana (Japanese)
+    "\uac00-\ud7af"  # Hangul Syllables (Korean)
+    "\u0400-\u04ff"  # Cyrillic
     "]"
 )
 
 
 def has_foreign_script(text: str) -> bool:
-    """True, wenn der Text Zeichen aus fremden Schriftsystemen enthält (0 Token)."""
+    """True if the text contains characters from foreign writing systems (0 tokens)."""
     return bool(FOREIGN_SCRIPT_RE.search(text or ""))
 
 
@@ -84,11 +84,11 @@ Text:
 
 async def polish_german(model, text: str, context: str = "") -> tuple[str, list[dict]]:
     """
-    Lektoriert einen deutschen Text (Kapitel). Liefert (text, usage) zurück.
+    Lectorates a German text (chapter). Returns (text, usage).
 
-    Ohne Modell (Echo-Modus) oder bei leerem Text: unverändert, 0 Usage.
-    Schlägt die Korrektur fehl (leere Antwort), wird der ORIGINAL-Text
-    zurückgegeben — Sprachlektor darf niemals ein Kapitel zerstören.
+    Without a model (echo mode) or with empty text: unchanged, 0 usage.
+    If the correction fails (empty response), the ORIGINAL text is
+    returned — a language lector must never destroy a chapter.
     """
     if model is None or not text or not text.strip():
         return text, []
@@ -98,14 +98,14 @@ async def polish_german(model, text: str, context: str = "") -> tuple[str, list[
     usage: list[dict] = []
 
     if not forced:
-        # Mini-Check: nur YES/NO — kostet ~1 Output-Token. Bewusst OHNE
-        # Retry-Schleife (ainvoke_with_retry): ein leere/fehlerhafte Check-
-        # Antwort gilt einfach als "NO" statt 70s Backoff zu verbraten.
+        # Mini-check: YES/NO only — costs ~1 output token. Deliberately
+        # WITHOUT a retry loop (ainvoke_with_retry): an empty/failed check
+        # answer simply counts as "NO" instead of burning 70s of backoff.
         try:
             check = await model.ainvoke(CHECK_PROMPT.format(text=text))
             usage.append(extract_usage(check))
             needs_fix = "yes" in str(check.content).strip().lower()
-        except Exception:  # noqa: BLE001 — Check ist best-effort
+        except Exception:  # noqa: BLE001 — the check is best-effort
             logger.warning("Sprach-Check fehlgeschlagen (%s) — übersprungen", context)
         if not needs_fix:
             return text, usage
@@ -120,13 +120,13 @@ async def polish_german(model, text: str, context: str = "") -> tuple[str, list[
         fixed = await ainvoke_with_retry(
             model, POLISH_PROMPT.format(text=text), context=f"{context} [Lektor]"
         )
-    except Exception:  # noqa: BLE001 — Lektor darf den Lauf nicht killen
+    except Exception:  # noqa: BLE001 — the lector must not kill the run
         logger.warning("Sprachkorrektur fehlgeschlagen (%s) — Original bleibt", context)
         return text, usage
     usage.append(extract_usage(fixed))
 
     corrected = str(fixed.content).strip()
-    # Sicherheitsnetz: leere oder kiptisch kaputte Korrektur verwerfen.
+    # Safety net: discard empty or cryptically broken corrections.
     if not corrected or len(corrected) < len(text) * 0.5:
         logger.warning(
             "Sprachkorrektur lieferte verdächtig kurzes Ergebnis (%s) — Original bleibt", context

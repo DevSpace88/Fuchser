@@ -1,20 +1,20 @@
 """
-tests/conftest.py — Gemeinsames Test-Setup (Pytest Fixtures)
-============================================================
+tests/conftest.py — Shared test setup (pytest fixtures)
+=======================================================
 
-Fixture = eine Funktion, die Test-Daten/Objekte bereitstellt. Pytest injiziert
-sie per Namen in die Tests (Dependency Injection, ähnlich wie bei FastAPI).
+A fixture = a function that provides test data/objects. Pytest injects them
+into tests by name (dependency injection, similar to FastAPI).
 
-Wir stellen hier bereit:
-  - Einen Test-Client (httpx.AsyncClient) für die App.
-  - Eine ISOLIERTE Test-Datenbank (SQLite in-memory) — nicht die echte Postgres.
+We provide here:
+  - A test client (httpx.AsyncClient) for the app.
+  - An ISOLATED test database (SQLite in-memory) — not the real Postgres.
 
-Warum SQLite für Tests?
-  - Braucht keinen DB-Server (schnell, deterministisch).
-  - In-Memory = flüchtig; jeder Test beginnt mit einer sauberen DB.
-  - ACHTUNG: SQLite verhält sich nicht 100% wie Postgres (Typen, Constraints).
-    Für kritische Migration-Tests sollte man eine echte Postgres nutzen.
-    Für Logik-Tests (Auth-Flows) reicht SQLite völlig.
+Why SQLite for tests?
+  - No DB server needed (fast, deterministic).
+  - In-memory = volatile; every test starts with a clean DB.
+  - WARNING: SQLite does not behave 100% like Postgres (types, constraints).
+    For critical migration tests you should use a real Postgres.
+    For logic tests (auth flows) SQLite is entirely sufficient.
 """
 
 from collections.abc import AsyncGenerator, AsyncIterator
@@ -25,25 +25,26 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-# WICHTIG: Alle Modelle importieren, damit SQLModel.metadata sie kennt,
-# BEVOR create_all läuft.
+# IMPORTANT: import all models so that SQLModel.metadata knows about them
+# BEFORE create_all runs.
 import app.models  # noqa: F401
 from app.core.db import get_session
 from app.main import app
 
 # ----------------------------------------------------------------------------
-# Test-Engine: SQLite in-memory. ":memory:" = virtueller Dateiname für In-Memory.
-# `connect_args={"check_same_thread": False}`: SQLite erlaubt sonst nur den
-# erzeugenden Thread; für async/Tests müssen andere Threads dürfen.
-# `staticpool`: teilt EINE Verbindung über alle Sessions im Test -> sonst wäre
-# die In-Memory-DB nach jeder Session weg (jede Verbindung = neue DB).
+# Test engine: SQLite in-memory. ":memory:" = virtual file name for in-memory.
+# `connect_args={"check_same_thread": False}`: otherwise SQLite only allows the
+# creating thread; for async/tests other threads must be permitted.
+# `staticpool`: shares ONE connection across all sessions in the test ->
+# otherwise the in-memory DB would be gone after each session (every
+# connection = a new DB).
 # ----------------------------------------------------------------------------
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
 @pytest_asyncio.fixture
 async def test_engine():
-    """Erzeugt den Test-Engine und legt Tabellen an."""
+    """Creates the test engine and sets up the tables."""
     engine = create_async_engine(
         TEST_DATABASE_URL,
         echo=False,
@@ -58,7 +59,7 @@ async def test_engine():
 
 @pytest_asyncio.fixture
 async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
-    """Eine Session auf die Test-DB."""
+    """A session on the test DB."""
     TestSessionLocal = async_sessionmaker(
         bind=test_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
     )
@@ -67,19 +68,19 @@ async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
 
 
 # ----------------------------------------------------------------------------
-# Dependency-Override: leite get_session auf die Test-Session um.
+# Dependency override: redirect get_session to the test session.
 # ----------------------------------------------------------------------------
-# Das ist der zentrale Trick: FastAPI ruft bei JEDEM Request `get_session` auf.
-# Wir ersetzen es durch eine Funktion, die unsere Test-Session zurückgibt —
-# damit testet die App gegen SQLite statt gegen Postgres.
+# This is the central trick: FastAPI calls `get_session` on EVERY request.
+# We replace it with a function that returns our test session —
+# that way the app runs against SQLite instead of Postgres during tests.
 @pytest_asyncio.fixture
 async def client(test_session: AsyncSession) -> AsyncIterator[AsyncClient]:
-    """Test-Client mit überschriebener DB-Dependency."""
+    """Test client with the DB dependency overridden."""
 
     async def _override_get_session():
-        # Dieselbe Session wiederverwenden (damit Commits im Test-Client für
-        # nachfolgende Queries sichtbar sind). In-Memory-Static-Pool teilt die
-        # Verbindung ohnehin.
+        # Reuse the same session (so that commits made via the test client
+        # are visible to subsequent queries). The in-memory static pool
+        # shares the connection anyway.
         yield test_session
 
     app.dependency_overrides[get_session] = _override_get_session

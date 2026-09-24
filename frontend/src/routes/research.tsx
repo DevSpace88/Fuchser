@@ -1,15 +1,15 @@
-// routes/research.tsx — Die Recherche als CHAT (User-Wunsch: kein einzelnes
-// Suchfeld mehr, sondern ein Gespräch wie auf der Landingpage simuliert).
+// routes/research.tsx — research as a CHAT (user request: no more single
+// search field, but a conversation like the one simulated on the landing page).
 // ============================================================================
 //
-// Jede Nachricht = ein Recherche-Projekt:
-//   User-Bubble (rechts): die Frage
-//   Fuchser-Bubble (links): Status-Zeile → Sub-Agent-Chips → live getippter
-//   Report (Markdown) → Quellen-Chips → Aktionen (PDF, Detail-Ansicht).
+// Every message = one research project:
+//   User bubble (right): the question
+//   Fuchser bubble (left): status line → sub-agent chips → live-typed
+//   report (Markdown) → source chips → actions (PDF, detail view).
 //
-// Die Historie kommt aus der Datenbank (listResearch, älteste zuerst) —
-// neue Fragen hängen unten an. Gestreamt wird über dasselbe SSE-Protokoll
-// wie bisher (lib/sse.ts), nur landet alles jetzt in Chat-Bubbles.
+// The history comes from the database (listResearch, oldest first) —
+// new questions are appended at the bottom. Streaming uses the same SSE
+// protocol as before (lib/sse.ts); everything just lands in chat bubbles now.
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -53,34 +53,34 @@ import { streamSSE } from "@/lib/sse";
 import { linkifyCitations } from "@/lib/citations";
 
 // ----------------------------------------------------------------------------
-// Ein Chat-Beitrag: die Frage (von dir) + alles, was der Agent dazu erzeugt.
+// One chat entry: the question (from you) + everything the agent produces for it.
 // ----------------------------------------------------------------------------
 interface ChatEntry {
   projectId: string;
   question: string;
   status: string;
-  report: string; // wächst beim Streaming
+  report: string; // grows while streaming
   sources: Source[];
   subagents: { sub_question: string; sources: number | null }[];
   activeAgent: string | null;
   error: string | null;
   running: boolean;
-  parentId: string | null; // Stufe 5: Follow-up-Verweis
+  parentId: string | null; // level 5: follow-up reference
   usage: { total_tokens: number; llm_calls: number } | null;
-  historical: boolean; // aus der DB geladen (vs. in DIESER Session gefragt)
-  // Phase 2 "Deep Reports": Gliederung + Kapitel-Fortschritt (Todo-Liste)
+  historical: boolean; // loaded from the DB (vs. asked in THIS session)
+  // Phase 2 "deep reports": outline + chapter progress (todo list)
   outline: { title: string; abstract: string; chapters: { title: string; focus: string }[] } | null;
   latestActivity: { tool: string; query: string; agent: string; t?: number } | null;
   activityLog: { tool: string; query: string; agent: string; t: number }[];
   chapterStatus: Record<number, "running" | "done">;
 }
 
-// Alte Projekte (aus der DB) → Chat-Einträge.
+// Old projects (from the DB) → chat entries.
 function entryFromProject(p: ResearchProject): ChatEntry {
-  // Deep-Report nach Reload wiederherstellen: Gliederung + Kapitel-Fortschritt
-  // + bereits geschriebene Kapitel als Report-Vorschau. So bleibt der
-  // Teilerfolg eines ABGEBROCHENEN Laufs sichtbar (und "Fortsetzen" macht
-  // ab dem ersten fehlenden Kapitel weiter, statt von vorne).
+  // Restore a deep report after a reload: outline + chapter progress
+  // + already-written chapters as a report preview. This keeps the partial
+  // success of an ABORTED run visible (and "resume" continues from the first
+  // missing chapter instead of starting over).
   const outline = p.outline ?? null;
   const chapters = p.chapters ?? [];
   const chapterStatus: Record<number, "running" | "done"> = {};
@@ -128,29 +128,29 @@ export function ResearchPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  // Stufe 5: Follow-up-Modus — die nächste Frage läuft im selben Thread
-  // wie die ausgewählte Recherche (der Agent "erinnert" sich).
+  // Level 5: follow-up mode — the next question runs in the same thread
+  // as the selected research (the agent "remembers").
   const [followupOf, setFollowupOf] = useState<string | null>(null);
-  // Sidepanel: Welche Recherche ist im rechten Panel geöffnet?
+  // Side panel: which research is open in the right-hand panel?
   const [panelId, setPanelId] = useState<string | null>(null);
-  // Auto-Kontext (default AN): Jede neue Frage läuft automatisch im Thread
-  // der letzten abgeschlossenen Recherche — der Chat ist EIN Gespräch.
+  // Auto context (default ON): every new question automatically runs in the
+  // thread of the last completed research — the chat is ONE conversation.
   const [autoContext, setAutoContext] = useState(false);
-  // Aktive Unterhaltung (ECHTES Chat-Modell): conversation-id + ihre
-  // Nachrichten-IDs. Neue Fragen im Chat landen als NACHRICHT darin —
-  // ohne parent-Ketten-Gebastel (Google-AI-Studio-Modell).
+  // Active conversation (REAL chat model): conversation id + its
+  // message IDs. New questions in the chat become a MESSAGE in it —
+  // without fiddly parent chains (Google AI Studio model).
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  // Aktive Unterhaltung (Kette von Projekt-IDs): Per Historie-Klick
-  // geöffnet — dann zeigt der Chat NUR diese Follow-up-Kette (Wurzel +
-  // alle Nachfragen), nicht mehr die globale Historie.
+  // Active conversation (chain of project IDs): opened via a history
+  // click — then the chat shows ONLY this follow-up chain (root +
+  // all follow-ups), no longer the global history.
   const [conversationChain, setConversationChain] = useState<string[] | null>(null);
-  // "Neue Unterhaltung": true = nur DIESE Session zeigen (leerer Chat),
-  // false = kompletter Verlauf. DEFAULT: true — /research öffnet FRISCH
-  // (User-Wunsch); der Verlauf ist einen Klick entfernt.
+  // "New conversation": true = show only THIS session (empty chat),
+  // false = full history. DEFAULT: true — /research opens FRESH
+  // (user request); the history is one click away.
   const [hideHistory, setHideHistory] = useState(true);
-  // Abort-Controller je laufendem Projekt (Stop-Button).
+  // Abort controller per running project (stop button).
   const abortMap = useRef<Record<string, AbortController>>({});
-  // Aktive Timeouts für Reconnects & Cleanup beim Unmount
+  // Active timeouts for reconnects & cleanup on unmount
   const activeRetryTimeouts = useRef<Record<string, number>>({});
   const isMountedRef = useRef(true);
 
@@ -162,15 +162,15 @@ export function ResearchPage() {
       activeRetryTimeouts.current = {};
     };
   }, []);
-  // Phase 2: Tiefe der NÄCHSTEN Frage — "quick" oder "deep" (Langbericht).
+  // Phase 2: depth of the NEXT question — "quick" or "deep" (long report).
   const [depth, setDepth] = useState<"quick" | "deep">("quick");
   const [citationStyle, setCitationStyle] = useState<"apa" | "ieee" | "plain">("ieee");
-  // Dokumenten-Upload: Dateien, die an die NÄCHSTE Frage angehängt werden
-  // (PDF/DOCX/TXT/MD/CSV — Text wird serverseitig extrahiert).
+  // Document upload: files that will be attached to the NEXT question
+  // (PDF/DOCX/TXT/MD/CSV — text is extracted server-side).
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Auto-Grow-Textarea: Höhe misst sich am Inhalt (auch bei langen Zeilen
-  // OHNE Zeilenumbruch), wächst mit bis ~220px — danach interner Scroll.
+  // Auto-grow textarea: the height follows the content (even with long
+  // lines WITHOUT line breaks), grows up to ~220px — then internal scroll.
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     const el = textareaRef.current;
@@ -178,16 +178,16 @@ export function ResearchPage() {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
   }, [input]);
-  // Fokus aus der URL (?focus=<id>, z. B. vom Dashboard): Panel öffnen.
+  // Focus from the URL (?focus=<id>, e.g. from the dashboard): open the panel.
   const [searchParams] = useSearchParams();
-  // Auto-Scroll ans Ende bei neuen Inhalten.
+  // Auto-scroll to the end when new content arrives.
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fresh = searchParams.get("new");
     if (fresh) {
-      // "Neue Recherche": LEERER Chat + Kontext AUS — die nächste Frage
-      // startet ohne Altvorwissen und OHNE angezeigten Altverlauf.
+      // "New research": EMPTY chat + context OFF — the next question
+      // starts without prior knowledge and WITHOUT showing old history.
       setAutoContext(false);
       setHideHistory(true);
       setPanelId(null);
@@ -206,12 +206,12 @@ export function ResearchPage() {
       const detail = await getConversation(convId);
       const msgs = detail.messages.map(entryFromProject);
       setEntries((prev) => {
-        // Bestehende Session-Einträge behalten (sie könnten laufen)
+        // Keep existing session entries (they might still be running)
         const sessionEntries = prev.filter((e) => !e.historical && !msgs.some((m) => m.projectId === e.projectId));
-        // LIVE-STATE MERGEN: Der Reload-Reconnect hat für laufende Tasks
-        // bereits running=true + Live-Telemetrie gesetzt. Das Ersetzen durch
-        // die DB-Frischversion (running=false) würde das auslöschen — die UI
-        // zeigte dann keinen Fortschritt, obwohl der Worker arbeitet.
+        // MERGE LIVE STATE: the reload reconnect has already set
+        // running=true + live telemetry for running tasks. Replacing that
+        // with the fresh DB version (running=false) would wipe it out — the
+        // UI would then show no progress even though the worker is working.
         const merged = msgs.map((m) => {
           const live = prev.find((e) => e.projectId === m.projectId);
           if (!live) return m;
@@ -241,7 +241,7 @@ export function ResearchPage() {
       .then((projects) => {
         const loaded = projects.reverse().map(entryFromProject);
         setEntries(loaded);
-        // Reload-Recovery: laufende Tasks wieder verbinden (Worker läuft weiter)
+        // Reload recovery: reconnect running tasks (the worker keeps running)
         loaded.forEach((e) => {
           if (e.status === "running" || e.status === "queued") {
             void runAgent(e.projectId, false);
@@ -252,15 +252,15 @@ export function ResearchPage() {
           return;
         }
         if (focus) {
-          // Legacy/Fokus: Projekt -> dessen Unterhaltung öffnen
+          // Legacy/focus: project -> open its conversation
           void getResearch(focus).then((p) => {
             if (p.conversation_id) void openConversation(p.conversation_id, focus);
           });
           return;
         }
-        // Reload während eines LAUFENDEN Tasks: direkt zur Aufgabe zurück-
-        // springen (Unterhaltung öffnen + fokussieren), statt einen leeren
-        // Chat zu zeigen. Der User landet so wieder dort, wo er war.
+        // Reload while a task is RUNNING: jump straight back to the task
+        // (open + focus the conversation) instead of showing an empty
+        // chat. This way the user lands where they left off.
         const active = loaded.find(
           (e) => e.status === "running" || e.status === "queued",
         );
@@ -274,13 +274,13 @@ export function ResearchPage() {
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
-    // searchParams bewusst nicht in den Deps: nur beim Mount auslesen.
+    // searchParams deliberately not in the deps: only read on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-Scroll nur, wenn der User (nahe) am Ende ist. Wer hochscrollt,
-  // um zu lesen, wird NICHT mehr nach unten gezwingen (User-Feedback:
-  // "während es druckt kann ich nicht hochscrollen").
+  // Auto-scroll only if the user is (near) the bottom. Anyone scrolling up
+  // to read is NOT dragged back down (user feedback:
+  // "I can't scroll up while it's printing").
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isNearBottom = () => {
     const el = scrollContainerRef.current;
@@ -304,16 +304,16 @@ export function ResearchPage() {
   }, []);
 
 
-  // Hilfs-Setter: EINEN Eintrag (nach projectId) aktualisieren.
+  // Helper setter: update ONE entry (by projectId).
   const update = (projectId: string, patch: (e: ChatEntry) => ChatEntry) =>
     setEntries((prev) => prev.map((e) => (e.projectId === projectId ? patch(e) : e)));
 
-  // Robuster Stream- & Recovery-Handler für eine Recherche:
-  // 1. Hört per SSE auf Live-Events (Token, Status, Kapitel, Quellen, etc.)
-  // 2. Fängt Verbindungsabbrüche / Proxy-Timeouts ab
-  // 3. Gleicht bei Unterbrechung den echten Backend-Status (getResearch) ab
-  // 4. Läuft die Recherche noch im Backend-Worker -> automatischer Reconnect + Polling-Fallback
-  // 5. Ist die Recherche fertig (oder fehlgeschlagen) -> direktes Übernehmen ohne Reload!
+  // Robust streaming & recovery handler for one research run:
+  // 1. Listens for live events via SSE (token, status, chapters, sources, etc.)
+  // 2. Catches connection drops / proxy timeouts
+  // 3. On interruption, reconciles with the real backend status (getResearch)
+  // 4. If the research is still running in the backend worker -> automatic reconnect + polling fallback
+  // 5. If the research is finished (or failed) -> adopt directly without a reload!
   const runAgent = async (projectId: string, isInitialStart = true) => {
     if (activeRetryTimeouts.current[projectId]) {
       window.clearTimeout(activeRetryTimeouts.current[projectId]);
@@ -324,8 +324,8 @@ export function ResearchPage() {
       update(projectId, (e) => ({
         ...e,
         running: true,
-        // Resume (nach Fehler): bisherigen Teilerfolg behalten — neue Kapitel
-        // werden live angehängt. Frischer/neuer Lauf: zurücksetzen.
+        // Resume (after error): keep the partial success so far — new
+        // chapters are appended live. Fresh/new run: reset.
         report: e.error ? e.report : "",
         sources: [],
         subagents: [],
@@ -345,7 +345,7 @@ export function ResearchPage() {
         const text: string = ev.data.text;
         update(projectId, (e) => ({ ...e, report: e.report + text }));
       } else if (ev.event === "tool") {
-        // Live-Status: Welche Suche/Aktion läuft gerade?
+        // Live status: which search/action is currently running?
         const act = {
           tool: ev.data.tool ?? "?",
           query: ev.data.query ?? "",
@@ -358,12 +358,12 @@ export function ResearchPage() {
           activityLog: [...e.activityLog.slice(-7), act],
         }));
       } else if (ev.event === "outline") {
-        // Deep: Gliederung als TODO-Liste anzeigen
+        // Deep: show the outline as a TODO list
         update(projectId, (e) => ({ ...e, outline: ev.data.outline ?? null }));
       } else if (ev.event === "chapter") {
-        // Deep: Kapitel-Fortschritt (start/done) in die Todo-Liste. Das
-        // fertige Kapitel wird zusätzlich live in die Report-Vorschau
-        // gehängt — der Teilerfolg bleibt so auch OHNE Reload sichtbar.
+        // Deep: chapter progress (start/done) into the todo list. The
+        // finished chapter is additionally appended live to the report
+        // preview — the partial success stays visible even WITHOUT a reload.
         const idx: number = ev.data.index;
         update(projectId, (e) => ({
           ...e,
@@ -378,8 +378,8 @@ export function ResearchPage() {
               : e.report,
         }));
       } else if (ev.event === "report_reset") {
-        // Kritiker-Loop: Der Synthesizer schreibt einen KOMPLETT NEUEN
-        // Report — alte Version aus der Anzeige werfen.
+        // Critic loop: the synthesizer is writing a COMPLETELY NEW
+        // report — throw the old version out of the display.
         update(projectId, (e) => ({ ...e, report: "" }));
       } else if (ev.event === "node") {
         const node: string = ev.data.node;
@@ -419,7 +419,7 @@ export function ResearchPage() {
       } else if (ev.event === "done") {
         streamCompletedNormally = true;
         update(projectId, (e) => ({ ...e, running: false, status: "done" }));
-        // DB-Abgleich für finale Quellen, Report & Trace
+        // DB reconciliation for final sources, report & trace
         void getResearch(projectId)
           .then((fresh) => {
             if (!isMountedRef.current) return;
@@ -448,7 +448,7 @@ export function ResearchPage() {
       await streamSSE(`/api/v1/research/${projectId}/run`, handleEvent, controller.signal);
       streamCompletedNormally = true;
     } catch {
-      // Stream abgebrochen / unterbrochen / fehlgeschlagen
+      // Stream aborted / interrupted / failed
     } finally {
       delete abortMap.current[projectId];
     }
@@ -458,8 +458,8 @@ export function ResearchPage() {
       return;
     }
 
-    // Wenn der Stream beendet wurde, ohne dass 'done'/'error' empfangen wurde
-    // oder bei Verbindungsabbruch: DB-Status prüfen (Self-Healing)!
+    // If the stream ended without 'done'/'error' being received,
+    // or on a connection drop: check the DB status (self-healing)!
     try {
       const current = await getResearch(projectId);
       if (!isMountedRef.current) return;
@@ -485,8 +485,8 @@ export function ResearchPage() {
         return;
       }
 
-      // Backend arbeitet noch (running / queued):
-      // Automatischer Reconnect & Polling-Fallback, damit die UI nie steckenbleibt.
+      // The backend is still working (running / queued):
+      // Automatic reconnect & polling fallback so the UI never gets stuck.
       if (current.status === "running" || current.status === "queued") {
         update(projectId, (e) => ({
           ...e,
@@ -507,7 +507,7 @@ export function ResearchPage() {
         }, 1500);
       }
     } catch {
-      // Wenn auch getResearch kurz fehlschlägt (z. B. Netzwerk-Glitches):
+      // If even getResearch fails briefly (e.g. network glitches):
       if (!streamCompletedNormally && isMountedRef.current) {
         activeRetryTimeouts.current[projectId] = window.setTimeout(() => {
           delete activeRetryTimeouts.current[projectId];
@@ -519,7 +519,7 @@ export function ResearchPage() {
     }
   };
 
-  // Stop: Lauf abbrechen (Backend fängt den Abbruch und setzt queued).
+  // Stop: abort the run (the backend catches the abort and sets queued).
   const stopAgent = (projectId: string) => {
     if (activeRetryTimeouts.current[projectId]) {
       window.clearTimeout(activeRetryTimeouts.current[projectId]);
@@ -529,12 +529,12 @@ export function ResearchPage() {
     update(projectId, (e) => ({ ...e, running: false, status: "queued" }));
   };
 
-  // Chat-Verlauf als KONTEXT bauen: die letzten 3 QA-Paare, kompakt.
-  // Auch FEHLGESCHLAGENE Läufe landen darin ("fehlgeschlagen: …") — genau
-  // dann braucht die Nachfrage den Kontext am dringendsten.
+  // Build the chat history as CONTEXT: the last 3 QA pairs, compact.
+  // FAILED runs are included too ("failed: …") — that is exactly when
+  // the follow-up question needs the context most urgently.
   const buildContextSummary = (): string => {
-    // NUR die sichtbare Unterhaltung (Session oder Kette) — niemals die
-    // globale Historie! (Das war die Quelle versehentlicher Ketten-Links.)
+    // ONLY the visible conversation (session or chain) — never the
+    // global history! (That was the source of accidental chain links.)
     const pool = conversationChain
       ? conversationChain
           .map((id) => entries.find((e) => e.projectId === id))
@@ -583,14 +583,14 @@ export function ResearchPage() {
     setInput("");
     setSending(true);
     try {
-      // Kontext-Kette: expliziter Follow-up-Modus gewinnt, sonst (wenn
-      // Auto-Kontext an) automatisch die letzte Recherche mit Report.
+      // Context chain: explicit follow-up mode wins; otherwise (if
+      // auto context is on) automatically the last research with a report.
       let parent = followupOf;
-      setFollowupOf(null); // Modus gilt für genau EINE Frage
-      // CHAT-MODELL (wie Google AI Studio): Eine Frage im geöffneten Chat
-      // wird NACHRICHT dieser Unterhaltung (conversation_id) — KEIN parent-
-      // Link, keine Ketten-Rekonstruktion mehr. parent nur noch explizit
-      // über "Nachfragen"/Panel-Ergänzung.
+      setFollowupOf(null); // the mode applies to exactly ONE question
+      // CHAT MODEL (like Google AI Studio): a question in the open chat
+      // becomes a MESSAGE of that conversation (conversation_id) — NO
+      // parent link, no chain reconstruction anymore. parent only remains
+      // explicit via "follow up"/panel addition.
       const inConversation = activeConversationId !== null;
       const contextSummary =
         (parent || inConversation) && (autoContext || inConversation)
@@ -604,19 +604,19 @@ export function ResearchPage() {
         depth,
         citationStyle,
       );
-      // WICHTIG: historical: false — frisch gestellte Fragen sind NICHT
-      // historisch, sonst filtert hideHistory sie im frischen Chat weg und
-      // das Fenster wirkt leer (genau das war der Bug!).
+      // IMPORTANT: historical: false — freshly asked questions are NOT
+      // historical, otherwise hideHistory filters them out of the fresh
+      // chat and the window looks empty (that was exactly the bug!).
       const freshEntry = {
         ...entryFromProject({ ...project, report: null, sources: null }),
         historical: false,
       };
       setEntries((prev) => [...prev, freshEntry]);
-      // In der Unterhaltungs-Ansicht wird die neue Frage Teil der Kette
-      // (sonst wäre sie dort unsichtbar).
+      // In the conversation view the new question becomes part of the
+      // chain (otherwise it would be invisible there).
       if (conversationChain) setConversationChain((prev) => [...(prev ?? []), project.id]);
-      // Angehängte Dokumente hochladen (VOR dem Agentenstart — der
-      // Researcher bekommt das document_search-Tool nur, wenn Docs da sind).
+      // Upload attached documents (BEFORE the agent starts — the
+      // researcher only gets the document_search tool if docs are there).
       const files = pendingFiles;
       setPendingFiles([]);
       if (files.length > 0) {
@@ -629,8 +629,8 @@ export function ResearchPage() {
           }));
         }
       }
-      // Kein await: Der Stream läuft im Hintergrund, das Input-Feld ist
-      // sofort wieder frei — man kann parallel eine zweite Frage stellen.
+      // No await: the stream runs in the background, the input field is
+      // immediately free again — you can ask a second question in parallel.
       void runAgent(project.id);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -658,9 +658,9 @@ export function ResearchPage() {
     }
   };
 
-  // Was angezeigt wird: alles, oder nur die aktuelle Unterhaltung.
+  // What is displayed: everything, or only the current conversation.
   const visibleEntries = conversationChain
-    ? // Unterhaltungs-Ansicht: nur die Kette (Wurzel -> Nachfragen)
+    ? // Conversation view: only the chain (root -> follow-ups)
       conversationChain
         .map((id) => entries.find((e) => e.projectId === id))
         .filter((e): e is ChatEntry => Boolean(e))
@@ -668,8 +668,8 @@ export function ResearchPage() {
       ? entries.filter((e) => !e.historical)
       : entries;
 
-  // Scroll-Spy: Wenn das Sidepanel geöffnet ist und der Nutzer durch den Chat scrollt,
-  // wechselt das Panel automatisch synchron zum aktuell sichtbaren Prompt.
+  // Scroll spy: when the side panel is open and the user scrolls through the chat,
+  // the panel automatically switches to the currently visible prompt.
   useEffect(() => {
     if (!panelId) return;
     const el = scrollContainerRef.current;
@@ -714,11 +714,11 @@ export function ResearchPage() {
     <div
       className={
         "mx-auto flex h-[calc(100dvh-3.5rem)] w-full max-w-[1600px] flex-col p-2 sm:p-4 transition-[padding] duration-200 " +
-        // Panel offen? Dann auf Desktop rechts Platz schaffen
+        // Panel open? Then make room on the right on desktop
         (panelId ? "md:pr-[400px]" : "")
       }
     >
-      {/* ---------- Kopf ---------- */}
+      {/* ---------- Header ---------- */}
       <div className="flex items-center justify-between border-b border-border/60 px-1 pb-2.5 sm:px-2 sm:pb-3">
         <div className="flex items-center gap-2">
           <FoxIcon size={22} className="text-primary shrink-0" />
@@ -732,7 +732,7 @@ export function ResearchPage() {
           </div>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Panel-Toggle */}
+          {/* Panel toggle */}
           <button
             onClick={() => {
               if (panelId) {
@@ -775,7 +775,7 @@ export function ResearchPage() {
         </div>
       </div>
 
-      {/* ---------- Nachrichtenverlauf ---------- */}
+      {/* ---------- Message history ---------- */}
       <div ref={scrollContainerRef} className="flex-1 space-y-4 sm:space-y-6 overflow-y-auto px-1 sm:px-2 py-4">
         {loaded && visibleEntries.length === 0 && (
           <div className="mt-12 text-center text-muted-foreground px-4">
@@ -789,7 +789,7 @@ export function ResearchPage() {
 
         {visibleEntries.map((entry) => (
           <div key={entry.projectId} id={`entry-${entry.projectId}`} className="space-y-2.5 sm:space-y-3">
-            {/* Frage-Bubble (User, rechts) */}
+            {/* Question bubble (user, right) */}
             <div className="flex justify-end">
               <div className="max-w-[90%] sm:max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm text-primary-foreground shadow-md break-words">
                 {entry.parentId && (
@@ -801,13 +801,13 @@ export function ResearchPage() {
               </div>
             </div>
 
-            {/* Fuchser-Antwort (links, volle Breite) */}
+            {/* Fuchser answer (left, full width) */}
             <div className="flex gap-2 sm:gap-2.5">
               <div className="mt-0.5 shrink-0">
                 <FoxIcon size={22} className="text-primary" />
               </div>
               <div className="min-w-0 flex-1">
-                {/* Status-Zeile */}
+                {/* Status line */}
                 {entry.running && entry.activeAgent && (
                   <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground font-medium">
                     <span className="flex h-5 w-5 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -828,7 +828,7 @@ export function ResearchPage() {
                   </div>
                 )}
 
-                {/* Sub-Agenten-Chips */}
+                {/* Sub-agent chips */}
                 {entry.subagents.length > 0 && (
                   <div className="mb-2.5 flex flex-wrap gap-1 sm:gap-1.5">
                     {entry.subagents.map((a, i) => (
@@ -858,7 +858,7 @@ export function ResearchPage() {
                   </div>
                 )}
 
-                {/* Deep: Gliederungs-Todo-Liste mit Kapitel-Fortschritt */}
+                {/* Deep: outline todo list with chapter progress */}
                 {entry.outline && (
                   <div className="report-md mb-3 rounded-2xl border border-secondary/30 bg-secondary/5 p-3 sm:p-4">
                     <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-secondary">
@@ -894,7 +894,7 @@ export function ResearchPage() {
                   </div>
                 )}
 
-                {/* Report (streamt live rein) */}
+                {/* Report (streams in live) */}
                 {(entry.report || entry.running) && (
                   <div className="report-md rounded-2xl rounded-tl-sm border border-border/80 bg-card/90 p-3 sm:p-4 text-xs sm:text-sm leading-relaxed shadow-sm">
                     {entry.running && !entry.report && (
@@ -953,7 +953,7 @@ export function ResearchPage() {
                   </div>
                 )}
 
-                {/* Quellen-Chips */}
+                {/* Source chips */}
                 {entry.sources.length > 0 && !entry.running && (
                   <div className="mt-2 flex flex-wrap items-center gap-1 sm:gap-1.5">
                     <span className="mr-0.5 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -980,7 +980,7 @@ export function ResearchPage() {
                   </div>
                 )}
 
-                {/* Fehler */}
+                {/* Error */}
                 {entry.error && (
                   <div className="mt-2 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
                     <AlertCircle className="h-4 w-4 shrink-0" />
@@ -988,7 +988,7 @@ export function ResearchPage() {
                   </div>
                 )}
 
-                {/* Aktionen */}
+                {/* Actions */}
                 {!entry.running && (entry.report || entry.error) && (
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-3 text-xs text-muted-foreground">
                     {entry.usage && entry.usage.total_tokens > 0 && (
@@ -1052,7 +1052,7 @@ export function ResearchPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* ---------- Live-Statusleiste (wie DSH) ---------- */}
+      {/* ---------- Live status bar (like DSH) ---------- */}
       {entries.some((e) => e.running) && (
         <div className="mb-2 rounded-xl border border-secondary/30 bg-secondary/5 px-2.5 py-1.5 sm:px-3 sm:py-2 text-xs">
           {(() => {
@@ -1061,7 +1061,7 @@ export function ResearchPage() {
             const act = entry?.latestActivity;
             const agent = entry?.activeAgent;
 
-            // Tool-Icon
+            // Tool icon
             const icon =
               act?.tool === "web_search" ? "🔎" :
               act?.tool === "document_search" ? "📄" :
@@ -1070,14 +1070,14 @@ export function ResearchPage() {
               act?.tool === "research_chapter" ? "📚" :
               act?.tool === "retry" ? "⏳" : "⚙️";
 
-            // Vergangene Zeit seit letzter Aktivität
+            // Time elapsed since the last activity
             const elapsed = act?.t ? Math.floor((Date.now() - act.t) / 1000) : 0;
             const elapsedStr =
               elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
 
             return (
               <>
-                {/* Aktuelle Aktivität (groß) */}
+                {/* Current activity (large) */}
                 <div className="flex items-center gap-2">
                   <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-secondary" />
                   <span className="min-w-0 flex-1 truncate font-medium text-secondary text-[11px] sm:text-xs">
@@ -1096,7 +1096,7 @@ export function ResearchPage() {
                   </span>
                 </div>
 
-                {/* Mini-Log: letzte 4 Aktivitäten */}
+                {/* Mini log: last 4 activities */}
                 {entry?.activityLog && entry.activityLog.length > 1 && (
                   <div className="mt-1 space-y-0.5 border-t border-secondary/20 pt-1">
                     {entry.activityLog.slice(-4, -1).reverse().map((l, i) => (
@@ -1116,7 +1116,7 @@ export function ResearchPage() {
         </div>
       )}
 
-      {/* ---------- Angehängte Dokumente (Chips) ---------- */}
+      {/* ---------- Attached documents (chips) ---------- */}
       {pendingFiles.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1 sm:gap-1.5">
           {pendingFiles.map((f) => (
@@ -1139,7 +1139,7 @@ export function ResearchPage() {
         </div>
       )}
 
-      {/* ---------- Follow-up-Banner (Stufe 5) ---------- */}
+      {/* ---------- Follow-up banner (level 5) ---------- */}
       {followupOf && (
         <div className="mb-2 flex items-center justify-between rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-xs text-accent">
           <span className="flex items-center gap-1.5 min-w-0 truncate">
@@ -1152,8 +1152,8 @@ export function ResearchPage() {
         </div>
       )}
 
-      {/* ---------- Eingabe ---------- */}
-      {/* Verstecktes Datei-Auswahlfeld */}
+      {/* ---------- Input ---------- */}
+      {/* Hidden file picker */}
       <input
         ref={fileInputRef}
         type="file"
@@ -1170,7 +1170,7 @@ export function ResearchPage() {
         onSubmit={send}
         className="flex flex-col gap-1.5 rounded-2xl border border-border/80 bg-card p-2 sm:p-2.5 shadow-lg"
       >
-        {/* Haupt-Eingabezeile */}
+        {/* Main input row */}
         <div className="flex items-end gap-1.5 sm:gap-2">
           <textarea
             ref={textareaRef}
@@ -1204,7 +1204,7 @@ export function ResearchPage() {
           </Button>
         </div>
 
-        {/* Toolbar-Leiste */}
+        {/* Toolbar row */}
         <div className="flex flex-wrap items-center justify-between gap-1 border-t border-border/40 pt-1.5">
           <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
             {/* Depth Mode */}
@@ -1223,7 +1223,7 @@ export function ResearchPage() {
               <span>{depth === "deep" ? "Deep" : "Quick"}</span>
             </button>
 
-            {/* Citations Style (nur bei deep) */}
+            {/* Citations style (deep only) */}
             {depth === "deep" && (
               <select
                 value={citationStyle}
@@ -1274,7 +1274,7 @@ export function ResearchPage() {
             </button>
           </div>
 
-          {/* Stopp-Button wenn etwas läuft */}
+          {/* Stop button while something is running */}
           {entries.some((e) => e.running) && (
             <button
               type="button"
@@ -1291,7 +1291,7 @@ export function ResearchPage() {
         </div>
       </form>
 
-      {/* ---------- Sidepanel: Modal-Overlay auf Mobile / Sidebar auf Desktop ---------- */}
+      {/* ---------- Side panel: modal overlay on mobile / sidebar on desktop ---------- */}
       {panelId && (
         <>
           {/* Mobile Backdrop */}

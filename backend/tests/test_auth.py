@@ -1,25 +1,25 @@
 """
-tests/test_auth.py — End-to-End-Tests für den Auth-Flow
+tests/test_auth.py — End-to-end tests for the auth flow
 =======================================================
 
-Diese Tests gehen den GESAMTEN Pfad durch:
-  HTTP-Request -> FastAPI-Router -> Dependency -> Service -> DB -> HTTP-Response.
+These tests walk through the ENTIRE path:
+  HTTP request -> FastAPI router -> dependency -> service -> DB -> HTTP response.
 
-So testen wir nicht nur isolierte Funktionen, sondern das Zusammenspiel
-(genau das, was in Produktion schiefgehen kann).
+This way we test not just isolated functions but the interplay
+(exactly what can go wrong in production).
 
-Getestete Flows:
-  1) Registrieren -> Login -> /me abrufen.
-  2) Geschützte Route ohne Token -> 401.
-  3) Refresh-Token-Rotation: altes Token nach Refresh ungültig.
-  4) Autorisierung: normaler User bekommt 403 auf /users, Admin bekommt 200.
+Flows under test:
+  1) Register -> login -> fetch /me.
+  2) Protected route without a token -> 401.
+  3) Refresh token rotation: old token invalid after refresh.
+  4) Authorization: a normal user gets 403 on /users, an admin gets 200.
 """
 
 import pytest
 
 
 # ----------------------------------------------------------------------------
-# Hilfsfunktion: Authorization-Header bauen.
+# Helper function: build the Authorization header.
 # ----------------------------------------------------------------------------
 def auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
@@ -38,7 +38,7 @@ async def test_register_login_me(client):
     assert resp.status_code == 201, resp.text
     created = resp.json()
     assert created["email"] == "alice@example.com"
-    assert "hashed_password" not in created  # Passwort darf nie raus!
+    assert "hashed_password" not in created  # the password must never leak out!
     assert created["role"] == "user"
     assert created["is_active"] is True
 
@@ -53,7 +53,7 @@ async def test_register_login_me(client):
     assert "refresh_token" in tokens
     access = tokens["access_token"]
 
-    # --- /me mit Access-Token ---
+    # --- /me with the access token ---
     resp = await client.get("/api/v1/auth/me", headers=auth_header(access))
     assert resp.status_code == 200, resp.text
     me = resp.json()
@@ -61,7 +61,7 @@ async def test_register_login_me(client):
 
 
 # ============================================================================
-# 2) GESCHÜTZTE ROUTE OHNE TOKEN -> 401
+# 2) PROTECTED ROUTE WITHOUT A TOKEN -> 401
 # ============================================================================
 @pytest.mark.asyncio
 async def test_protected_without_token(client):
@@ -78,13 +78,13 @@ async def test_register_duplicate_email(client):
     resp1 = await client.post("/api/v1/auth/register", json=payload)
     assert resp1.status_code == 201
 
-    # Zweiter Versuch mit gleicher Mail -> Konflikt.
+    # Second attempt with the same email -> conflict.
     resp2 = await client.post("/api/v1/auth/register", json=payload)
     assert resp2.status_code == 409
 
 
 # ============================================================================
-# 4) LOGIN MIT FALSCHEM PASSWORT -> 401 (gleiche Meldung wie "User nicht da")
+# 4) LOGIN WITH A WRONG PASSWORD -> 401 (same message as "user not found")
 # ============================================================================
 @pytest.mark.asyncio
 async def test_login_wrong_password(client):
@@ -100,11 +100,11 @@ async def test_login_wrong_password(client):
 
 
 # ============================================================================
-# 5) REFRESH + ROTATION: nach Refresh ist der alte Refresh-Token tot.
+# 5) REFRESH + ROTATION: after a refresh the old refresh token is dead.
 # ============================================================================
 @pytest.mark.asyncio
 async def test_refresh_rotation(client):
-    # Login -> Token-Paar holen.
+    # Login -> fetch the token pair.
     await client.post(
         "/api/v1/auth/register",
         json={"email": "dan@example.com", "password": "supersecret"},
@@ -115,34 +115,34 @@ async def test_refresh_rotation(client):
     )
     refresh_old = resp.json()["refresh_token"]
 
-    # Refresh #1 -> neues Paar.
+    # Refresh #1 -> new pair.
     resp = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_old})
     assert resp.status_code == 200, resp.text
     refresh_new = resp.json()["refresh_token"]
     assert refresh_new != refresh_old
 
-    # Nochmal mit dem ALTEN -> muss 401 sein (Rotation!).
+    # Using the OLD one again -> must be 401 (rotation!).
     resp = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_old})
     assert resp.status_code == 401
 
-    # Mit dem NEUEN klappt's nochmal.
+    # The NEW one still works.
     resp = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_new})
     assert resp.status_code == 200
 
 
 # ============================================================================
-# 6) AUTORISIERUNG: Normaler User -> 403 auf /users; Admin -> 200.
+# 6) AUTHORIZATION: normal user -> 403 on /users; admin -> 200.
 # ============================================================================
 async def _register_and_login(client, email: str, role: str = "user"):
-    """Helper: legt einen User an (per Service direkt, um Rolle zu setzen)."""
-    # Wir nutzen den Service direkt, weil der öffentliche Register-Endpunkt
-    # immer Rolle=user vergibt. So können wir einen Admin simulieren.
+    """Helper: creates a user (via the service directly, to set the role)."""
+    # We use the service directly because the public register endpoint
+    # always assigns role=user. This lets us simulate an admin.
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.core.security import hash_password
     from app.models.user import User, UserRole
 
-    # Hole die aktuelle Test-Session aus dem Override.
+    # Get the current test session from the override.
     gen = app_get_session_for_tests()
     session: AsyncSession = await gen.__anext__()
     user = User(
@@ -162,7 +162,7 @@ async def _register_and_login(client, email: str, role: str = "user"):
     return resp.json()["access_token"]
 
 
-# Trick, um in Tests an die Override-Session zu kommen (lesend).
+# Trick to get at the override session in tests (read-only).
 async def app_get_session_for_tests():
     from app.core.db import get_session
     from app.main import app
@@ -178,12 +178,12 @@ async def app_get_session_for_tests():
 
 @pytest.mark.asyncio
 async def test_authorization_user_forbidden_admin_allowed(client):
-    # Normaler User versucht /users abzurufen -> 403.
+    # A normal user tries to fetch /users -> 403.
     user_token = await _register_and_login(client, "user1@example.com", "user")
     resp = await client.get("/api/v1/users", headers=auth_header(user_token))
     assert resp.status_code == 403
 
-    # Admin darf.
+    # The admin is allowed to.
     admin_token = await _register_and_login(client, "admin1@example.com", "admin")
     resp = await client.get("/api/v1/users", headers=auth_header(admin_token))
     assert resp.status_code == 200, resp.text
